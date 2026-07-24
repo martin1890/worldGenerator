@@ -7,6 +7,9 @@
 #include <functional>
 #include <array>
 
+const int side = 11;
+const int tile_count = side * side;
+
 struct PairHash {
     std::size_t operator()(const std::pair<int, int>& p) const {
         std::size_t h1 = std::hash<int>{}(p.first);
@@ -16,14 +19,16 @@ struct PairHash {
     }
 };
 
-struct PoissonChunk {
-    std::array<float, 242> tiles{};
-};
-
 struct Points {
     float x;
     float y;
 };
+
+struct PoissonChunk {
+    int size = tile_count;
+    std::array<Points, tile_count> tiles{};
+};
+
 
 void poisson_distribution(std::unordered_map<std::pair<int, int>, PoissonChunk, PairHash>& grid);
 
