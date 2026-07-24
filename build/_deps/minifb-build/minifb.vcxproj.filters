@@ -1,0 +1,66 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\src\MiniFB_common.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\src\MiniFB_cpp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\src\MiniFB_internal.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\src\MiniFB_timer.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\src\gl\MiniFB_GL.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\src\windows\WinMiniFB.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\include\MiniFB.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\include\MiniFB_cpp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\include\MiniFB_enums.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\include\MiniFB_keylist.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\include\MiniFB_macros.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\include\MiniFB_types.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\src\MiniFB_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\src\WindowData.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\src\gl\MiniFB_GL.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\src\windows\WindowData_Win.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{8743A420-5825-3B9F-820E-507FB1F5E34D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{04608A42-82BA-3633-9D7B-E0DF3F4185B4}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

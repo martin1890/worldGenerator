@@ -1,0 +1,3 @@
+C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/CMakeFiles/minifb-populate.dir
+C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/CMakeFiles/ALL_BUILD.dir
+C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/CMakeFiles/ZERO_CHECK.dir

@@ -1,0 +1,8 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/Users/jamym/cpp_projekt/world_generator/build/cmake_install.cmake",
+		"C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

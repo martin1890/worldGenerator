@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/CMakeFiles/minifb-populate"
+		},
+		{
+			"file" : "C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/CMakeFiles/de1b31da5c604bc0bf91b8d35f294157/minifb-populate.rule"
+		},
+		{
+			"file" : "C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/CMakeFiles/6815ab1037acdae438bf959e4eb4802b/minifb-populate-complete.rule"
+		},
+		{
+			"file" : "C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/CMakeFiles/dffc5b04c22cb5749e9c6a0696dc209d/minifb-populate-build.rule"
+		},
+		{
+			"file" : "C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/CMakeFiles/dffc5b04c22cb5749e9c6a0696dc209d/minifb-populate-configure.rule"
+		},
+		{
+			"file" : "C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/CMakeFiles/dffc5b04c22cb5749e9c6a0696dc209d/minifb-populate-download.rule"
+		},
+		{
+			"file" : "C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/CMakeFiles/dffc5b04c22cb5749e9c6a0696dc209d/minifb-populate-install.rule"
+		},
+		{
+			"file" : "C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/CMakeFiles/dffc5b04c22cb5749e9c6a0696dc209d/minifb-populate-mkdir.rule"
+		},
+		{
+			"file" : "C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/CMakeFiles/dffc5b04c22cb5749e9c6a0696dc209d/minifb-populate-patch.rule"
+		},
+		{
+			"file" : "C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/CMakeFiles/dffc5b04c22cb5749e9c6a0696dc209d/minifb-populate-test.rule"
+		},
+		{
+			"file" : "C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/CMakeFiles/dffc5b04c22cb5749e9c6a0696dc209d/minifb-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"minifb-populate"
+		],
+		"name" : "minifb-populate"
+	}
+}

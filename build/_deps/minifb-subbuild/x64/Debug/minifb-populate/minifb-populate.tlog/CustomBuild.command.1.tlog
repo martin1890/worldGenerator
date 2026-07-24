@@ -1,0 +1,150 @@
+^C:\USERS\JAMYM\CPP_PROJEKT\WORLD_GENERATOR\BUILD\_DEPS\MINIFB-SUBBUILD\CMAKEFILES\DFFC5B04C22CB5749E9C6A0696DC209D\MINIFB-POPULATE-MKDIR.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -Dcfgdir=/Debug -P C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/minifb-populate-prefix/tmp/minifb-populate-mkdirs.cmake
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/minifb-populate-prefix/src/minifb-populate-stamp/Debug/minifb-populate-mkdir
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\JAMYM\CPP_PROJEKT\WORLD_GENERATOR\BUILD\_DEPS\MINIFB-SUBBUILD\CMAKEFILES\DFFC5B04C22CB5749E9C6A0696DC209D\MINIFB-POPULATE-DOWNLOAD.RULE
+setlocal
+cd C:\Users\jamym\cpp_projekt\world_generator\build\_deps
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE -P C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/minifb-populate-prefix/tmp/minifb-populate-gitclone.cmake
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/minifb-populate-prefix/src/minifb-populate-stamp/Debug/minifb-populate-download
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\JAMYM\CPP_PROJEKT\WORLD_GENERATOR\BUILD\_DEPS\MINIFB-SUBBUILD\CMAKEFILES\DFFC5B04C22CB5749E9C6A0696DC209D\MINIFB-POPULATE-UPDATE.RULE
+setlocal
+cd C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -Dcan_fetch=YES -DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE -P C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/minifb-populate-prefix/tmp/minifb-populate-gitupdate.cmake
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\JAMYM\CPP_PROJEKT\WORLD_GENERATOR\BUILD\_DEPS\MINIFB-SUBBUILD\CMAKEFILES\DFFC5B04C22CB5749E9C6A0696DC209D\MINIFB-POPULATE-PATCH.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/minifb-populate-prefix/src/minifb-populate-stamp/Debug/minifb-populate-patch
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\JAMYM\CPP_PROJEKT\WORLD_GENERATOR\BUILD\_DEPS\MINIFB-SUBBUILD\CMAKEFILES\DFFC5B04C22CB5749E9C6A0696DC209D\MINIFB-POPULATE-CONFIGURE.RULE
+setlocal
+cd C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/minifb-populate-prefix/src/minifb-populate-stamp/Debug/minifb-populate-configure
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\JAMYM\CPP_PROJEKT\WORLD_GENERATOR\BUILD\_DEPS\MINIFB-SUBBUILD\CMAKEFILES\DFFC5B04C22CB5749E9C6A0696DC209D\MINIFB-POPULATE-BUILD.RULE
+setlocal
+cd C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/minifb-populate-prefix/src/minifb-populate-stamp/Debug/minifb-populate-build
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\JAMYM\CPP_PROJEKT\WORLD_GENERATOR\BUILD\_DEPS\MINIFB-SUBBUILD\CMAKEFILES\DFFC5B04C22CB5749E9C6A0696DC209D\MINIFB-POPULATE-INSTALL.RULE
+setlocal
+cd C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/minifb-populate-prefix/src/minifb-populate-stamp/Debug/minifb-populate-install
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\JAMYM\CPP_PROJEKT\WORLD_GENERATOR\BUILD\_DEPS\MINIFB-SUBBUILD\CMAKEFILES\DFFC5B04C22CB5749E9C6A0696DC209D\MINIFB-POPULATE-TEST.RULE
+setlocal
+cd C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-build
+if %errorlevel% neq 0 goto :cmEnd
+C:
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E echo_append
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/minifb-populate-prefix/src/minifb-populate-stamp/Debug/minifb-populate-test
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\JAMYM\CPP_PROJEKT\WORLD_GENERATOR\BUILD\_DEPS\MINIFB-SUBBUILD\CMAKEFILES\6815AB1037ACDAE438BF959E4EB4802B\MINIFB-POPULATE-COMPLETE.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -E make_directory C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/CMakeFiles/Debug
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/CMakeFiles/Debug/minifb-populate-complete
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\CMake\bin\cmake.exe" -E touch C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/minifb-populate-prefix/src/minifb-populate-stamp/Debug/minifb-populate-done
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\JAMYM\CPP_PROJEKT\WORLD_GENERATOR\BUILD\_DEPS\MINIFB-SUBBUILD\CMAKEFILES\DE1B31DA5C604BC0BF91B8D35F294157\MINIFB-POPULATE.RULE
+setlocal
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^C:\USERS\JAMYM\CPP_PROJEKT\WORLD_GENERATOR\BUILD\_DEPS\MINIFB-SUBBUILD\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild -BC:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild --check-stamp-file C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

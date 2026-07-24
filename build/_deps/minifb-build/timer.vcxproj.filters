@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\examples\timer.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-src\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{04608A42-82BA-3633-9D7B-E0DF3F4185B4}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

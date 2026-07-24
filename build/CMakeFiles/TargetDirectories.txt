@@ -1,0 +1,16 @@
+C:/Users/jamym/cpp_projekt/world_generator/build/CMakeFiles/world_generator.dir
+C:/Users/jamym/cpp_projekt/world_generator/build/CMakeFiles/INSTALL.dir
+C:/Users/jamym/cpp_projekt/world_generator/build/CMakeFiles/ALL_BUILD.dir
+C:/Users/jamym/cpp_projekt/world_generator/build/CMakeFiles/ZERO_CHECK.dir
+C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-build/CMakeFiles/minifb.dir
+C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-build/CMakeFiles/minifb_version_info.dir
+C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-build/CMakeFiles/noise.dir
+C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-build/CMakeFiles/input_events.dir
+C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-build/CMakeFiles/input_events_cpp.dir
+C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-build/CMakeFiles/multiple_windows.dir
+C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-build/CMakeFiles/hidpi.dir
+C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-build/CMakeFiles/fullscreen.dir
+C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-build/CMakeFiles/timer.dir
+C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-build/CMakeFiles/hide_cursor.dir
+C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-build/CMakeFiles/INSTALL.dir
+C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-build/CMakeFiles/ALL_BUILD.dir

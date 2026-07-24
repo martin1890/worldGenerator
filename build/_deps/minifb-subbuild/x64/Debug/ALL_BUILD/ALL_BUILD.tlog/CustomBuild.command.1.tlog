@@ -1,0 +1,10 @@
+^C:\USERS\JAMYM\CPP_PROJEKT\WORLD_GENERATOR\BUILD\_DEPS\MINIFB-SUBBUILD\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild -BC:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild --check-stamp-file C:/Users/jamym/cpp_projekt/world_generator/build/_deps/minifb-subbuild/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
