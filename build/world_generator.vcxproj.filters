@@ -4,6 +4,12 @@
     <ClCompile Include="C:\Users\jamym\cpp_projekt\world_generator\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="C:\Users\jamym\cpp_projekt\world_generator\helper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\jamym\cpp_projekt\world_generator\region_distribution.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="C:\Users\jamym\cpp_projekt\world_generator\CMakeLists.txt" />

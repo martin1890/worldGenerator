@@ -6,6 +6,7 @@
 #include <cstdint>
 
 float hash_random(uint32_t seed, int32_t x, int32_t y);
+uint16_t hash_random_uint16_t(uint32_t seed, int32_t x, int32_t y);
 float new_random(float current);
 
 template <std::size_t N>

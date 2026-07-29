@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <ProjectOutputs>
+    <ProjectOutput>
+      <FullPath>C:\Users\jamym\cpp_projekt\world_generator\build\x64\Release\ZERO_CHECK</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-build\Release\fullscreen.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-build\Release\hide_cursor.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-build\Release\hidpi.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-build\Release\input_events.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-build\Release\input_events_cpp.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-build\Release\minifb_version_info.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-build\Release\multiple_windows.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-build\Release\noise.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\jamym\cpp_projekt\world_generator\build\_deps\minifb-build\Release\timer.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\jamym\cpp_projekt\world_generator\build\Release\world_generator.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>C:\Users\jamym\cpp_projekt\world_generator\build\x64\Release\ALL_BUILD</FullPath>
+    </ProjectOutput>
+  </ProjectOutputs>
+  <ContentFiles />
+  <SatelliteDlls />
+  <NonRecipeFileRefs />
+</Project>
