@@ -6,12 +6,24 @@
 #include <utility>
 #include <functional>
 #include <array>
+#include <vector>
 
-const int region_radius = 2;
-const int side = 32;
-const int weight_field_side = side + region_radius * 2;
-const int tile_count = side * side;
-const int weight_field_size = weight_field_side * weight_field_side;
+constexpr int region_radius = 2;
+constexpr int chunk_side = 32;
+
+constexpr int chunks_area_side =
+    chunk_side * 3 + region_radius * 2;                  // 100
+
+constexpr int weight_field_side =
+    chunks_area_side + region_radius * 2;                   // 104
+
+constexpr int weight_field_padded =
+    ((weight_field_side + 7) / 8) * 8;                      // 104
+
+constexpr int weight_field_size =
+    weight_field_padded * weight_field_side;                // 10816
+
+constexpr int region_length = 8;
 
 struct PairHash {
     std::size_t operator()(const std::pair<int, int>& p) const {
@@ -22,17 +34,12 @@ struct PairHash {
     }
 };
 
-struct Points {
-    int x;
-    int y;
-};
-
 struct RegionLocationsChunk {
+    std::vector<uint8_t> regions_x;
+    std::vector<uint8_t> regions_y;
 
-    int size = tile_count;
-    std::array<uint16_t, weight_field_size> weight_field{};
-    std::vector<Points> regions;
-
+    // [9 offsets][point indices]
+    std::vector<std::uint8_t> padding_indices;
 };
 
 

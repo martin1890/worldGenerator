@@ -1,0 +1,105 @@
+diff --git a/region_distribution.hpp b/region_distribution.hpp
+index 0000000..0000000 100644
+--- a/region_distribution.hpp
++++ b/region_distribution.hpp
+@@ -5,6 +5,7 @@
+ #include <utility>
+ #include <functional>
+ #include <array>
++#include <vector>
+
+ const int region_radius = 2;
+ const int side = 32;
+@@ -25,15 +26,11 @@ struct PairHash {
+
+ };
+
+-struct Points {
+-
+-int x;
+-
+-int y;
+-
+-};
+ struct RegionLocationsChunk {
+
+ int size = tile_count;
+
+ std::array<uint16_t, weight_field_size> weight_field{};
+
+-std::vector<Points> regions;
++std::vector<uint16_t> regions_x;
++
++std::vector<uint16_t> regions_y;
+
+ };
+diff --git a/region_distribution.cpp b/region_distribution.cpp
+index 0000000..0000000 100644
+--- a/region_distribution.cpp
++++ b/region_distribution.cpp
+@@ -108,7 +108,8 @@ void region_distribution(
+ // With region_radius == 2, every candidate is compared with 24 neighbors.
+ constexpr int simd_width = 8;
+
+-chunk.regions.reserve(tile_count / 4);
++chunk.regions_x.reserve(tile_count / 4);
++chunk.regions_y.reserve(tile_count / 4);
+
+ for (int y = 0; y < side; ++y) {
+ int x = 0;
+@@ -128,7 +129,8 @@ for (; x + simd_width <= side; x += simd_width) {
+ for (int lane = 0; lane < simd_width; ++lane) {
+ const unsigned int lane_bits = 0x3u << (lane * 2);
+ if ((mask & lane_bits) == lane_bits) {
+-chunk.regions.push_back({x + lane, y});
++chunk.regions_x.push_back(static_cast<uint16_t>(x + lane));
++chunk.regions_y.push_back(static_cast<uint16_t>(y));
+ }
+ }
+ }
+@@ -136,12 +138,13 @@ if ((mask & lane_bits) == lane_bits) {
+ // Handles the remaining columns when side is not divisible by eight.
+ for (; x < side; ++x) {
+ if (is_local_max_scalar(chunk.weight_field, x, y)) {
+-chunk.regions.push_back({x, y});
++chunk.regions_x.push_back(static_cast<uint16_t>(x));
++chunk.regions_y.push_back(static_cast<uint16_t>(y));
+ }
+ }
+ }
+
+-chunk.size = static_cast<int>(chunk.regions.size());
++chunk.size = static_cast<int>(chunk.regions_x.size());
+ grid[{grid_x, grid_y}] = std::move(chunk);
+
+ std::printf(
+@@ -150,5 +153,5 @@ std::printf(
+ grid_x,
+ grid_y,
+-static_cast<int>(grid[{grid_x, grid_y}].regions.size()));
++static_cast<int>(grid[{grid_x, grid_y}].regions_x.size()));
+
+ }
+diff --git a/main.cpp b/main.cpp
+index 0000000..0000000 100644
+--- a/main.cpp
++++ b/main.cpp
+@@ -102,14 +102,16 @@ while (mfb_wait_sync(window)) {
+ }
+
+ const RegionLocationsChunk& chunk = grid.at(key);
+-for (const Points& point : chunk.regions) {
++for (std::size_t i = 0; i < chunk.regions_x.size(); ++i) {
+
+ const float world_x =
+-static_cast<float>(chunk_x * side + point.x);
++static_cast<float>(
++chunk_x * side + static_cast<int>(chunk.regions_x[i]));
+
+ const float world_y =
+-static_cast<float>(chunk_y * side + point.y);
++static_cast<float>(
++chunk_y * side + static_cast<int>(chunk.regions_y[i]));
+
+ const int screen_x = width / 2 + static_cast<int>(
+ std::lround(
