@@ -1,6 +1,7 @@
 #include <MiniFB.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <unordered_map>
@@ -15,20 +16,27 @@ constexpr std::uint32_t world_seed = 12345u;
 
 constexpr float player_speed = 0.18f;
 constexpr int pixels_per_tile = 12;
-constexpr int region_point_radius = 2;
+
+constexpr int curve_line_radius = 2;
+constexpr int curve_point_radius = 2;
+constexpr int origin_point_radius = 3;
 constexpr int player_point_radius = 4;
+
+constexpr float direction_arrow_length_tiles = 1.8f;
 
 constexpr std::uint32_t black = 0x00000000u;
 constexpr std::uint32_t white = 0x00FFFFFFu;
 constexpr std::uint32_t red = 0x00FF0000u;
 
-constexpr int chunk_point_offset =
-    curve_reach + direction_radius; // 16
-
 using RegionGrid = std::unordered_map<
     std::pair<int, int>,
     RegionLocationsChunk,
     PairHash>;
+
+struct DecodedCurvePoints {
+    std::array<int, region_length> x{};
+    std::array<int, region_length> y{};
+};
 
 void draw_square(
     std::vector<std::uint32_t>& buffer,
@@ -49,12 +57,168 @@ void draw_square(
     }
 }
 
+void draw_thick_line(
+    std::vector<std::uint32_t>& buffer,
+    int x0,
+    int y0,
+    int x1,
+    int y1,
+    int radius,
+    std::uint32_t color)
+{
+    const int dx = x1 - x0;
+    const int dy = y1 - y0;
+
+    const int steps = std::max(std::abs(dx), std::abs(dy));
+
+    if (steps == 0) {
+        draw_square(buffer, x0, y0, radius, color);
+        return;
+    }
+
+    for (int i = 0; i <= steps; ++i) {
+        const float t =
+            static_cast<float>(i) /
+            static_cast<float>(steps);
+
+        const int x = static_cast<int>(
+            std::lround(
+                static_cast<float>(x0) +
+                t * static_cast<float>(dx)));
+
+        const int y = static_cast<int>(
+            std::lround(
+                static_cast<float>(y0) +
+                t * static_cast<float>(dy)));
+
+        draw_square(buffer, x, y, radius, color);
+    }
+}
+
 int world_to_chunk(float world_coordinate)
 {
     return static_cast<int>(
         std::floor(
             world_coordinate /
             static_cast<float>(chunk_side)));
+}
+
+std::uint32_t hash_color(std::uint32_t value)
+{
+    value ^= value >> 16;
+    value *= 0x7feb352du;
+    value ^= value >> 15;
+    value *= 0x846ca68bu;
+    value ^= value >> 16;
+    return value;
+}
+
+std::uint32_t curve_color(
+    int chunk_x,
+    int chunk_y,
+    std::size_t region_index)
+{
+    std::uint32_t h =
+        static_cast<std::uint32_t>(chunk_x) * 0x9E3779B9u ^
+        static_cast<std::uint32_t>(chunk_y) * 0x85EBCA6Bu ^
+        static_cast<std::uint32_t>(region_index) * 0xC2B2AE35u ^
+        world_seed;
+
+    h = hash_color(h);
+
+    const std::uint8_t r =
+        static_cast<std::uint8_t>(80u + (h & 0x7Fu));
+
+    const std::uint8_t g =
+        static_cast<std::uint8_t>(80u + ((h >> 8) & 0x7Fu));
+
+    const std::uint8_t b =
+        static_cast<std::uint8_t>(80u + ((h >> 16) & 0x7Fu));
+
+    return
+        (static_cast<std::uint32_t>(r) << 16) |
+        (static_cast<std::uint32_t>(g) << 8) |
+        static_cast<std::uint32_t>(b);
+}
+
+DecodedCurvePoints decode_curve_points(
+    int world_start_x,
+    int world_start_y,
+    std::uint32_t curve)
+{
+    DecodedCurvePoints points{};
+
+    points.x[0] = world_start_x;
+    points.y[0] = world_start_y;
+
+    int current_x = world_start_x;
+    int current_y = world_start_y;
+
+    for (int step = 0; step < curve_step_count; ++step) {
+        const std::uint8_t direction =
+            get_curve_step(curve, step);
+
+        current_x += curve_dx[direction];
+        current_y += curve_dy[direction];
+
+        points.x[step + 1] = current_x;
+        points.y[step + 1] = current_y;
+    }
+
+    return points;
+}
+
+void draw_direction_arrow(
+    std::vector<std::uint32_t>& buffer,
+    float origin_world_x,
+    float origin_world_y,
+    float direction_angle,
+    float player_x,
+    float player_y,
+    std::uint32_t color)
+{
+    const float end_world_x =
+        origin_world_x +
+        std::cos(direction_angle) *
+        direction_arrow_length_tiles;
+
+    const float end_world_y =
+        origin_world_y +
+        std::sin(direction_angle) *
+        direction_arrow_length_tiles;
+
+    const int screen_x0 =
+        width / 2 + static_cast<int>(
+            std::lround(
+                (origin_world_x - player_x) *
+                pixels_per_tile));
+
+    const int screen_y0 =
+        height / 2 + static_cast<int>(
+            std::lround(
+                (origin_world_y - player_y) *
+                pixels_per_tile));
+
+    const int screen_x1 =
+        width / 2 + static_cast<int>(
+            std::lround(
+                (end_world_x - player_x) *
+                pixels_per_tile));
+
+    const int screen_y1 =
+        height / 2 + static_cast<int>(
+            std::lround(
+                (end_world_y - player_y) *
+                pixels_per_tile));
+
+    draw_thick_line(
+        buffer,
+        screen_x0,
+        screen_y0,
+        screen_x1,
+        screen_y1,
+        1,
+        color);
 }
 
 int main()
@@ -65,7 +229,7 @@ int main()
 
     mfb_window* window =
         mfb_open(
-            "Region viewer",
+            "Curve viewer",
             width,
             height);
 
@@ -157,8 +321,7 @@ int main()
                         chunk_y,
                         grid);
 
-                    chunk_iterator =
-                        grid.find(key);
+                    chunk_iterator = grid.find(key);
 
                     if (chunk_iterator == grid.end()) {
                         continue;
@@ -169,69 +332,149 @@ int main()
                     chunk_iterator->second;
 
                 const std::size_t point_count =
-                    std::min(
+                    std::min({
                         chunk.regions_x.size(),
-                        chunk.regions_y.size());
+                        chunk.regions_y.size(),
+                        chunk.region_directions.size(),
+                        chunk.region_curves.size()
+                    });
 
                 for (std::size_t i = 0;
                      i < point_count;
                      ++i) {
 
-                    const int support_x =
-                        static_cast<int>(
-                            chunk.regions_x[i]);
+                    const std::uint32_t curve =
+                        chunk.region_curves[i];
 
-                    const int support_y =
-                        static_cast<int>(
-                            chunk.regions_y[i]);
+                    const std::uint8_t start_position =
+                        get_curve_start(curve);
 
-                    /*
-                     * Only display region points whose origins
-                     * are actually inside this chunk.
-                     */
-                    if (support_x < chunk_point_offset ||
-                        support_x >= chunk_point_offset + chunk_side ||
-                        support_y < chunk_point_offset ||
-                        support_y >= chunk_point_offset + chunk_side) {
+                    const std::uint8_t point_count_active =
+                        get_curve_point_count(curve);
+
+                    if (point_count_active == 0) {
                         continue;
                     }
 
-                    const int local_x =
-                        support_x - chunk_point_offset;
-
-                    const int local_y =
-                        support_y - chunk_point_offset;
-
-                    const float world_x =
-                        static_cast<float>(
-                            chunk_x * chunk_side +
-                            local_x);
-
-                    const float world_y =
-                        static_cast<float>(
-                            chunk_y * chunk_side +
-                            local_y);
-
-                    const int screen_x =
-                        width / 2 +
+                    const int world_start_x =
+                        chunk_x * chunk_side +
                         static_cast<int>(
-                            std::lround(
-                                (world_x - player_x) *
-                                pixels_per_tile));
+                            chunk.regions_x[i]) -
+                        point_area_offset;
 
-                    const int screen_y =
-                        height / 2 +
+                    const int world_start_y =
+                        chunk_y * chunk_side +
                         static_cast<int>(
-                            std::lround(
-                                (world_y - player_y) *
-                                pixels_per_tile));
+                            chunk.regions_y[i]) -
+                        point_area_offset;
 
-                    draw_square(
-                        buffer,
-                        screen_x,
-                        screen_y,
-                        region_point_radius,
-                        white);
+                    const DecodedCurvePoints decoded =
+                        decode_curve_points(
+                            world_start_x,
+                            world_start_y,
+                            curve);
+
+                    const std::uint32_t color =
+                        curve_color(
+                            chunk_x,
+                            chunk_y,
+                            i);
+
+                    const int segment_end =
+                        static_cast<int>(start_position) +
+                        static_cast<int>(point_count_active) - 1;
+
+                    for (int p = static_cast<int>(start_position);
+                         p < segment_end;
+                         ++p) {
+
+                        const int screen_x0 =
+                            width / 2 + static_cast<int>(
+                                std::lround(
+                                    (static_cast<float>(decoded.x[p]) - player_x) *
+                                    pixels_per_tile));
+
+                        const int screen_y0 =
+                            height / 2 + static_cast<int>(
+                                std::lround(
+                                    (static_cast<float>(decoded.y[p]) - player_y) *
+                                    pixels_per_tile));
+
+                        const int screen_x1 =
+                            width / 2 + static_cast<int>(
+                                std::lround(
+                                    (static_cast<float>(decoded.x[p + 1]) - player_x) *
+                                    pixels_per_tile));
+
+                        const int screen_y1 =
+                            height / 2 + static_cast<int>(
+                                std::lround(
+                                    (static_cast<float>(decoded.y[p + 1]) - player_y) *
+                                    pixels_per_tile));
+
+                        draw_thick_line(
+                            buffer,
+                            screen_x0,
+                            screen_y0,
+                            screen_x1,
+                            screen_y1,
+                            curve_line_radius,
+                            color);
+                    }
+
+                    for (int p = static_cast<int>(start_position);
+                         p <= segment_end;
+                         ++p) {
+
+                        const int screen_x =
+                            width / 2 + static_cast<int>(
+                                std::lround(
+                                    (static_cast<float>(decoded.x[p]) - player_x) *
+                                    pixels_per_tile));
+
+                        const int screen_y =
+                            height / 2 + static_cast<int>(
+                                std::lround(
+                                    (static_cast<float>(decoded.y[p]) - player_y) *
+                                    pixels_per_tile));
+
+                        draw_square(
+                            buffer,
+                            screen_x,
+                            screen_y,
+                            curve_point_radius,
+                            color);
+                    }
+
+                    if (start_position == 0) {
+                        const float origin_world_x =
+                            static_cast<float>(world_start_x);
+
+                        const float origin_world_y =
+                            static_cast<float>(world_start_y);
+
+                        draw_square(
+                            buffer,
+                            width / 2 + static_cast<int>(
+                                std::lround(
+                                    (origin_world_x - player_x) *
+                                    pixels_per_tile)),
+                            height / 2 + static_cast<int>(
+                                std::lround(
+                                    (origin_world_y - player_y) *
+                                    pixels_per_tile)),
+                            origin_point_radius,
+                            color);
+
+                        draw_direction_arrow(
+                            buffer,
+                            origin_world_x,
+                            origin_world_y,
+                            chunk.region_directions[i],
+                            player_x,
+                            player_y,
+                            color);
+                    }
                 }
             }
         }
@@ -243,9 +486,7 @@ int main()
             player_point_radius,
             red);
 
-        if (mfb_update(
-                window,
-                buffer.data()) < 0) {
+        if (mfb_update(window, buffer.data()) < 0) {
             break;
         }
     }
