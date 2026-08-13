@@ -19,18 +19,18 @@ using WeightField =
 constexpr int hash_width = 8;
 constexpr int maxima_width = 16;
 
-constexpr int point_area_offset =
-    curve_reach + direction_radius; // 16
-
 constexpr int weight_field_offset =
     point_area_offset + maxima_radius; // 18
 
-constexpr int curve_min_cell =
+constexpr int curve_support_min_cell =
     curve_reach / spatial_cell_side; // 1
 
-constexpr int curve_max_cell =
+constexpr int curve_support_max_cell =
     spatial_grid_side -
-    curve_min_cell - 1;              // 6
+    curve_support_min_cell - 1;              // 6
+
+constexpr int chunk_curve_min_cell = curve_support_min_cell + 1; // 2
+constexpr int chunk_curve_max_cell = curve_support_max_cell - 1; // 5
 
 static_assert(region_points_side == 64);
 static_assert(weight_field_side == 68);
@@ -888,12 +888,12 @@ void create_region_curves(
     temporary_curves.reserve(point_count);
     curve_region_indices.reserve(point_count);
 
-    for (int cell_y = curve_min_cell;
-         cell_y <= curve_max_cell;
+    for (int cell_y = curve_support_min_cell;
+         cell_y <= curve_support_max_cell;
          ++cell_y) {
 
-        for (int cell_x = curve_min_cell;
-             cell_x <= curve_max_cell;
+        for (int cell_x = curve_support_min_cell;
+             cell_x <= curve_support_max_cell;
              ++cell_x) {
 
             const int cell_index =
@@ -1190,244 +1190,226 @@ void find_collision_candidates(
     std::vector<std::uint8_t>& curve_start_positions,
     std::vector<std::uint8_t>& curve_point_counts)
 {
-    const std::size_t curve_count =
-        temporary_curves.size();
+    // curve_region_indices is currently not needed here because
+    // iteration starts from spatial cells -> region index.
+    (void)curve_region_indices;
+
+    for (int current_cell_y = chunk_curve_min_cell;
+         current_cell_y <= chunk_curve_max_cell;
+         ++current_cell_y) {
+
+        for (int current_cell_x = chunk_curve_min_cell;
+             current_cell_x <= chunk_curve_max_cell;
+             ++current_cell_x) {
+
+            const int current_cell_index =
+                current_cell_y * spatial_grid_side +
+                current_cell_x;
+
+            const int current_cell_count =
+                chunk.spatial_cell_counts[
+                    current_cell_index];
+
+            for (int current_slot = 0;
+                 current_slot < current_cell_count;
+                 ++current_slot) {
+
+                const std::uint16_t current_region_index =
+                    chunk.spatial_cells_indices[
+                        current_cell_index][current_slot];
+
+                const std::uint16_t current_curve_index =
+                    region_curve_indices[
+                        current_region_index];
+
+                if (current_curve_index == UINT16_MAX) {
+                    continue;
+                }
+
+                const std::uint16_t current_weight =
+                    chunk.region_weights[
+                        current_region_index];
+
+                const CurveBounds current_bounds{
+                    curve_min_x[
+                        current_curve_index],
+
+                    curve_max_x[
+                        current_curve_index],
+
+                    curve_min_y[
+                        current_curve_index],
+
+                    curve_max_y[
+                        current_curve_index]
+                };
 
 
-    for (std::uint16_t current_curve_index = 0;
-        current_curve_index < curve_count;
-        ++current_curve_index) {
+                const int candidate_min_x =
+                    static_cast<int>(
+                        current_bounds.min_x) -
+                    curve_reach;
 
-        const std::uint16_t current_region_index =
-            curve_region_indices[
-                current_curve_index];
+                const int candidate_max_x =
+                    static_cast<int>(
+                        current_bounds.max_x) +
+                    curve_reach;
 
-        const std::uint16_t current_weight =
-            chunk.region_weights[
-                current_region_index];
+                const int candidate_min_y =
+                    static_cast<int>(
+                        current_bounds.min_y) -
+                    curve_reach;
 
-
-        /*
-         * Current curve AABB was precomputed during
-         * curve generation.
-         */
-        const CurveBounds current_bounds{
-            curve_min_x[
-                current_curve_index],
-
-            curve_max_x[
-                current_curve_index],
-
-            curve_min_y[
-                current_curve_index],
-
-            curve_max_y[
-                current_curve_index]
-        };
+                const int candidate_max_y =
+                    static_cast<int>(
+                        current_bounds.max_y) +
+                    curve_reach;
 
 
-        /*
-         * Candidate origins can lie up to curve_reach
-         * tiles outside the current curve AABB.
-         */
-        const int candidate_min_x =
-            static_cast<int>(
-                current_bounds.min_x) -
-            curve_reach;
+                int min_cell_x =
+                    candidate_min_x /
+                    spatial_cell_side;
 
-        const int candidate_max_x =
-            static_cast<int>(
-                current_bounds.max_x) +
-            curve_reach;
+                int max_cell_x =
+                    candidate_max_x /
+                    spatial_cell_side;
 
-        const int candidate_min_y =
-            static_cast<int>(
-                current_bounds.min_y) -
-            curve_reach;
+                int min_cell_y =
+                    candidate_min_y /
+                    spatial_cell_side;
 
-        const int candidate_max_y =
-            static_cast<int>(
-                current_bounds.max_y) +
-            curve_reach;
+                int max_cell_y =
+                    candidate_max_y /
+                    spatial_cell_side;
 
 
-        /*
-         * Convert candidate origin bounds to spatial cells.
-         */
-        int min_cell_x =
-            candidate_min_x /
-            spatial_cell_side;
+                min_cell_x =
+                    std::max(
+                        min_cell_x,
+                        curve_support_min_cell);
 
-        int max_cell_x =
-            candidate_max_x /
-            spatial_cell_side;
+                max_cell_x =
+                    std::min(
+                        max_cell_x,
+                        curve_support_max_cell);
 
-        int min_cell_y =
-            candidate_min_y /
-            spatial_cell_side;
+                min_cell_y =
+                    std::max(
+                        min_cell_y,
+                        curve_support_min_cell);
 
-        int max_cell_y =
-            candidate_max_y /
-            spatial_cell_side;
-
-
-        /*
-         * Only cells containing actual generated curves
-         * are allowed to contain candidates.
-         */
-        min_cell_x =
-            std::max(
-                min_cell_x,
-                curve_min_cell);
-
-        max_cell_x =
-            std::min(
-                max_cell_x,
-                curve_max_cell);
-
-        min_cell_y =
-            std::max(
-                min_cell_y,
-                curve_min_cell);
-
-        max_cell_y =
-            std::min(
-                max_cell_y,
-                curve_max_cell);
+                max_cell_y =
+                    std::min(
+                        max_cell_y,
+                        curve_support_max_cell);
 
 
-        if (min_cell_x > max_cell_x ||
-            min_cell_y > max_cell_y) {
+                if (min_cell_x > max_cell_x ||
+                    min_cell_y > max_cell_y) {
 
-            continue;
-        }
-
-
-        /*
-         * Each bit represents one position on the current curve.
-         *
-         * bit 0 = origin
-         * bit 1 = first step tile
-         * ...
-         * bit 8 = eighth step tile
-         */
-        std::uint16_t collision_mask = 0;
+                    continue;
+                }
 
 
-        /*
-         * Search only spatial cells whose curve origins
-         * could possibly reach the current AABB.
-         */
-        for (int cell_y = min_cell_y;
-             cell_y <= max_cell_y;
-             ++cell_y) {
-
-            for (int cell_x = min_cell_x;
-                 cell_x <= max_cell_x;
-                 ++cell_x) {
-
-                const int cell_index =
-                    cell_y *
-                    spatial_grid_side +
-                    cell_x;
-
-                const int count =
-                    chunk.spatial_cell_counts[
-                        cell_index];
+                std::uint16_t collision_mask = 0;
 
 
-                for (int slot = 0;
-                     slot < count;
-                     ++slot) {
+                for (int cell_y = min_cell_y;
+                     cell_y <= max_cell_y;
+                     ++cell_y) {
 
-                    const std::uint16_t other_region_index =
-                        chunk.spatial_cells_indices[
-                            cell_index][slot];
+                    for (int cell_x = min_cell_x;
+                         cell_x <= max_cell_x;
+                         ++cell_x) {
+
+                        const int cell_index =
+                            cell_y *
+                            spatial_grid_side +
+                            cell_x;
+
+                        const int count =
+                            chunk.spatial_cell_counts[
+                                cell_index];
 
 
-                    /*
-                     * Only strictly stronger curves can
-                     * remove points from the current curve.
-                     *
-                     * This also rejects the current curve itself.
-                     */
-                    if (chunk.region_weights[
-                            other_region_index] <=
-                        current_weight) {
+                        for (int slot = 0;
+                             slot < count;
+                             ++slot) {
 
-                        continue;
+                            const std::uint16_t other_region_index =
+                                chunk.spatial_cells_indices[
+                                    cell_index][slot];
+
+
+                            // Only stronger curves can cut
+                            // the current curve.
+                            if (chunk.region_weights[
+                                    other_region_index] <=
+                                current_weight) {
+
+                                continue;
+                            }
+
+
+                            const std::uint16_t other_curve_index =
+                                region_curve_indices[
+                                    other_region_index];
+
+                            if (other_curve_index ==
+                                UINT16_MAX) {
+
+                                continue;
+                            }
+
+
+                            const CurveBounds other_bounds{
+                                curve_min_x[
+                                    other_curve_index],
+
+                                curve_max_x[
+                                    other_curve_index],
+
+                                curve_min_y[
+                                    other_curve_index],
+
+                                curve_max_y[
+                                    other_curve_index]
+                            };
+
+
+                            if (!bounds_overlap(
+                                    current_bounds,
+                                    other_bounds)) {
+
+                                continue;
+                            }
+
+
+                            collision_mask |=
+                                get_collision_mask(
+                                    temporary_curves[
+                                        current_curve_index],
+
+                                    temporary_curves[
+                                        other_curve_index]);
+
+
+                            if ((collision_mask & 0x01FFu) ==
+                                0x01FFu) {
+
+                                break;
+                            }
+                        }
+
+
+                        if ((collision_mask & 0x01FFu) ==
+                            0x01FFu) {
+
+                            break;
+                        }
                     }
 
 
-                    /*
-                     * Convert region index to compact curve index.
-                     *
-                     * UINT16_MAX means that this region only exists
-                     * for support calculations and has no curve.
-                     */
-                    const std::uint16_t other_curve_index =
-                        region_curve_indices[
-                            other_region_index];
-
-                    if (other_curve_index ==
-                        UINT16_MAX) {
-
-                        continue;
-                    }
-
-
-                    /*
-                     * Candidate AABB was also precomputed
-                     * during curve generation.
-                     */
-                    const CurveBounds other_bounds{
-                        curve_min_x[
-                            other_curve_index],
-
-                        curve_max_x[
-                            other_curve_index],
-
-                        curve_min_y[
-                            other_curve_index],
-
-                        curve_max_y[
-                            other_curve_index]
-                    };
-
-
-                    /*
-                     * If the actual AABBs do not overlap,
-                     * the curves cannot share a tile.
-                     */
-                    if (!bounds_overlap(
-                            current_bounds,
-                            other_bounds)) {
-
-                        continue;
-                    }
-
-
-                    /*
-                     * Compare the current curve against the
-                     * already-finalized active segment of the
-                     * stronger curve.
-                     *
-                     * The result is a 9-bit mask describing
-                     * which positions on current collide.
-                     */
-                    collision_mask |=
-                        get_collision_mask(
-                            temporary_curves[
-                                current_curve_index],
-
-                            temporary_curves[
-                                other_curve_index]);
-
-
-                    /*
-                     * All nine positions collide.
-                     * Nothing else can change the result.
-                     */
                     if ((collision_mask & 0x01FFu) ==
                         0x01FFu) {
 
@@ -1436,47 +1418,26 @@ void find_collision_candidates(
                 }
 
 
-                /*
-                 * Leave the remaining cells too if every
-                 * current position is already blocked.
-                 */
-                if ((collision_mask & 0x01FFu) ==
-                    0x01FFu) {
+                const CurveSegment segment =
+                    find_longest_clear_segment(
+                        collision_mask);
 
-                    break;
-                }
-            }
+                curve_start_positions[
+                    current_curve_index] =
+                    segment.start;
 
-
-            if ((collision_mask & 0x01FFu) ==
-                0x01FFu) {
-
-                break;
+                curve_point_counts[
+                    current_curve_index] =
+                    segment.point_count;
             }
         }
-
-
-        /*
-         * Keep the longest contiguous segment that contains
-         * no collision with any stronger active curve.
-         */
-        const CurveSegment segment =
-            find_longest_clear_segment(
-                collision_mask);
-
-        curve_start_positions[
-            current_curve_index] =
-            segment.start;
-
-        curve_point_counts[
-            current_curve_index] =
-            segment.point_count;
     }
 
 
     if (!chunk.overflow_cells.empty()) {
         /*
-         * TODO: Handle collision candidates involving overflow points.
+         * TODO:
+         * Overflow points are not handled yet.
          */
     }
 }
@@ -1487,98 +1448,125 @@ void pack_region_curves(
     const std::vector<
         std::array<std::uint16_t, 16>>& temporary_curves,
     const std::vector<std::uint16_t>& curve_region_indices,
+    const std::vector<std::uint16_t>& region_curve_indices,
     const std::vector<std::uint8_t>& curve_start_positions,
     const std::vector<std::uint8_t>& curve_point_counts)
 {
+    // Keep region_curves parallel with the region arrays.
+    // Regions outside the actual 32x32 chunk remain zero.
     chunk.region_curves.assign(
         chunk.regions_x.size(),
         0u);
 
-    const std::size_t curve_count =
-        temporary_curves.size();
-
-    for (std::size_t curve_index = 0;
-         curve_index < curve_count;
-         ++curve_index) {
-
-        const auto& curve =
-            temporary_curves[curve_index];
-
-        std::uint32_t packed_curve = 0u;
+    // Not needed when iteration begins from spatial cells.
+    (void)curve_region_indices;
 
 
-        /*
-         * Pack all eight original directions.
-         *
-         * The final start and point count only determine
-         * which contiguous part is active.
-         */
-        for (int step = 0;
-             step < curve_step_count;
-             ++step) {
+    for (int cell_y = chunk_curve_min_cell;
+         cell_y <= chunk_curve_max_cell;
+         ++cell_y) {
 
-            const std::uint16_t tile_a =
-                curve[step];
+        for (int cell_x = chunk_curve_min_cell;
+             cell_x <= chunk_curve_max_cell;
+             ++cell_x) {
 
-            const std::uint16_t tile_b =
-                curve[step + 1];
+            const int cell_index =
+                cell_y * spatial_grid_side +
+                cell_x;
 
-
-            const int x_a =
-                static_cast<int>(
-                    tile_a >> 8);
-
-            const int y_a =
-                static_cast<int>(
-                    tile_a & 0xFFu);
-
-            const int x_b =
-                static_cast<int>(
-                    tile_b >> 8);
-
-            const int y_b =
-                static_cast<int>(
-                    tile_b & 0xFFu);
+            const int count =
+                chunk.spatial_cell_counts[
+                    cell_index];
 
 
-            const int dx =
-                x_b - x_a;
+            for (int slot = 0;
+                 slot < count;
+                 ++slot) {
 
-            const int dy =
-                y_b - y_a;
+                const std::uint16_t region_index =
+                    chunk.spatial_cells_indices[
+                        cell_index][slot];
+
+                const std::uint16_t curve_index =
+                    region_curve_indices[
+                        region_index];
+
+                if (curve_index == UINT16_MAX) {
+                    continue;
+                }
 
 
-            const std::uint8_t direction =
-                delta_to_curve_direction(
-                    dx,
-                    dy);
+                const auto& curve =
+                    temporary_curves[
+                        curve_index];
+
+                std::uint32_t packed_curve = 0u;
 
 
-            packed_curve |=
-                static_cast<std::uint32_t>(
-                    direction)
-                << (step * 3);
+                for (int step = 0;
+                     step < curve_step_count;
+                     ++step) {
+
+                    const std::uint16_t tile_a =
+                        curve[step];
+
+                    const std::uint16_t tile_b =
+                        curve[step + 1];
+
+
+                    const int x_a =
+                        static_cast<int>(
+                            tile_a >> 8);
+
+                    const int y_a =
+                        static_cast<int>(
+                            tile_a & 0xFFu);
+
+                    const int x_b =
+                        static_cast<int>(
+                            tile_b >> 8);
+
+                    const int y_b =
+                        static_cast<int>(
+                            tile_b & 0xFFu);
+
+
+                    const int dx =
+                        x_b - x_a;
+
+                    const int dy =
+                        y_b - y_a;
+
+
+                    const std::uint8_t direction =
+                        delta_to_curve_direction(
+                            dx,
+                            dy);
+
+
+                    packed_curve |=
+                        static_cast<std::uint32_t>(
+                            direction)
+                        << (step * 3);
+                }
+
+
+                set_curve_start(
+                    packed_curve,
+                    curve_start_positions[
+                        curve_index]);
+
+                set_curve_point_count(
+                    packed_curve,
+                    curve_point_counts[
+                        curve_index]);
+
+
+                chunk.region_curves[
+                    region_index] =
+                    packed_curve;
+            }
         }
-
-
-        set_curve_start(
-            packed_curve,
-            curve_start_positions[
-                curve_index]);
-
-        set_curve_point_count(
-            packed_curve,
-            curve_point_counts[
-                curve_index]);
-
-
-        const std::uint16_t region_index =
-            curve_region_indices[
-                curve_index];
-
-        chunk.region_curves[
-            region_index] =
-            packed_curve;
     }
 }
 
@@ -1655,6 +1643,7 @@ void region_distribution(
         chunk,
         temporary_curves,
         curve_region_indices,
+        region_curve_indices,
         curve_start_positions,
         curve_point_counts);
 
