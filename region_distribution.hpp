@@ -9,38 +9,51 @@
 #include <vector>
 
 constexpr int region_length = 9;
-constexpr int curve_reach = region_length - 1;       // 8
+constexpr int curve_reach = region_length - 1;  // 8
+
 constexpr int chunk_side = 32;
 constexpr int maxima_radius = 2;
-constexpr int direction_radius = curve_reach;        // 8
 
-// Points needed for direction calculations.
-// 32 + 2*8 + 2*8 = 64
-constexpr int region_points_side =
-    chunk_side + curve_reach * 2 + direction_radius * 2;
+constexpr int direction_radius = curve_reach;   // 8
+constexpr int spatial_cell_side = direction_radius; // 8
 
-// Extra maxima halo around the point area.
-// 64 + 2*2 = 68
-constexpr int weight_field_side =
-    region_points_side + maxima_radius * 2;
 
-// Eight uint16 hashes are generated at once.
-constexpr int weight_field_stride =
-    ((weight_field_side + 7) / 8) * 8;               // 72
+constexpr int chunk_cell_side =
+    chunk_side / spatial_cell_side;             // 4
 
-constexpr int weight_field_size =
-    weight_field_stride * weight_field_side;
+constexpr int curve_support_halo_cells = 2;
+constexpr int direction_halo_cells = 1;
 
-constexpr int spatial_cell_side = direction_radius;  // 8
+
 constexpr int spatial_grid_side =
-    region_points_side / spatial_cell_side;          // 8
+    chunk_cell_side +
+    2 * curve_support_halo_cells +
+    2 * direction_halo_cells;                   // 10
 
 constexpr int spatial_cell_count =
-    spatial_grid_side * spatial_grid_side;            // 64
+    spatial_grid_side * spatial_grid_side;       // 100
+
+
+constexpr int region_points_side =
+    spatial_grid_side * spatial_cell_side;       // 80
 
 
 constexpr int point_area_offset =
-    direction_radius + curve_reach; // 16
+    (direction_halo_cells +
+     curve_support_halo_cells) *
+    spatial_cell_side;                           // 24
+
+
+constexpr int weight_field_side =
+    region_points_side +
+    maxima_radius * 2;                           // 84
+
+constexpr int weight_field_stride =
+    ((weight_field_side + 7) / 8) * 8;           // 88
+
+constexpr int weight_field_size =
+    weight_field_stride *
+    weight_field_side;
 
 
 constexpr uint8_t cell_capacity = 8;
