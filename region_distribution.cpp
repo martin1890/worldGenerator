@@ -526,8 +526,7 @@ void calculate_region_directions(
     std::int32_t grid_x,
     std::int32_t grid_y)
 {
-    const std::size_t point_count =
-        chunk.regions_x.size();
+    const std::size_t point_count = chunk.regions_x.size();
 
     chunk.region_directions.resize(point_count);
 
@@ -539,232 +538,225 @@ void calculate_region_directions(
         _mm256_set1_epi32(
             direction_radius * direction_radius);
 
-    for (std::size_t point_index = 0;
-         point_index < point_count;
-         ++point_index) {
 
-        const int point_x =
-            chunk.regions_x[point_index];
+    // Only cells that produce curves need directions.
+    for (int cell_y = curve_support_min_cell;
+         cell_y <= curve_support_max_cell;
+         ++cell_y) {
 
-        const int point_y =
-            chunk.regions_y[point_index];
+        for (int cell_x = curve_support_min_cell;
+             cell_x <= curve_support_max_cell;
+             ++cell_x) {
 
-        float repulsion_x = 0.0f;
-        float repulsion_y = 0.0f;
+            const int cell_index =
+                cell_y * spatial_grid_side + cell_x;
 
-        const int cell_x =
-            point_x / spatial_cell_side;
+            const int cell_count =
+                chunk.spatial_cell_counts[cell_index];
 
-        const int cell_y =
-            point_y / spatial_cell_side;
 
-        /*
-         * direction_radius equals the cell width, so only the
-         * current cell and its eight neighbors can contain
-         * relevant points.
-         */
-        for (int cell_offset_y = -1;
-             cell_offset_y <= 1;
-             ++cell_offset_y) {
+            for (int slot = 0; slot < cell_count; ++slot) {
 
-            const int neighbor_cell_y =
-                cell_y + cell_offset_y;
+                const std::uint16_t point_index =
+                    chunk.spatial_cells_indices[cell_index][slot];
 
-            if (neighbor_cell_y < 0 ||
-                neighbor_cell_y >= spatial_grid_side) {
-                continue;
-            }
+                const int point_x =
+                    chunk.regions_x[point_index];
 
-            for (int cell_offset_x = -1;
-                 cell_offset_x <= 1;
-                 ++cell_offset_x) {
+                const int point_y =
+                    chunk.regions_y[point_index];
 
-                const int neighbor_cell_x =
-                    cell_x + cell_offset_x;
+                float repulsion_x = 0.0f;
+                float repulsion_y = 0.0f;
 
-                if (neighbor_cell_x < 0 ||
-                    neighbor_cell_x >= spatial_grid_side) {
-                    continue;
+
+                // Because the current cell is always in 1..8,
+                // all neighboring cells are guaranteed to be in 0..9.
+                for (int cell_offset_y = -1;
+                     cell_offset_y <= 1;
+                     ++cell_offset_y) {
+
+                    const int neighbor_cell_y =
+                        cell_y + cell_offset_y;
+
+                    for (int cell_offset_x = -1;
+                         cell_offset_x <= 1;
+                         ++cell_offset_x) {
+
+                        const int neighbor_cell_x =
+                            cell_x + cell_offset_x;
+
+                        const int neighbor_cell_index =
+                            neighbor_cell_y * spatial_grid_side +
+                            neighbor_cell_x;
+
+                        const int count =
+                            chunk.spatial_cell_counts[
+                                neighbor_cell_index];
+
+                        if (count == 0) {
+                            continue;
+                        }
+
+
+                        const __m128i packed_x =
+                            _mm_loadl_epi64(
+                                reinterpret_cast<const __m128i*>(
+                                    chunk.spatial_cells_x[
+                                        neighbor_cell_index].data()));
+
+                        const __m128i packed_y =
+                            _mm_loadl_epi64(
+                                reinterpret_cast<const __m128i*>(
+                                    chunk.spatial_cells_y[
+                                        neighbor_cell_index].data()));
+
+
+                        const __m256i neighbor_x =
+                            _mm256_cvtepu8_epi32(
+                                packed_x);
+
+                        const __m256i neighbor_y =
+                            _mm256_cvtepu8_epi32(
+                                packed_y);
+
+
+                        const __m256i dx =
+                            _mm256_sub_epi32(
+                                _mm256_set1_epi32(point_x),
+                                neighbor_x);
+
+                        const __m256i dy =
+                            _mm256_sub_epi32(
+                                _mm256_set1_epi32(point_y),
+                                neighbor_y);
+
+
+                        const __m256i distance_squared =
+                            _mm256_add_epi32(
+                                _mm256_mullo_epi32(dx, dx),
+                                _mm256_mullo_epi32(dy, dy));
+
+
+                        const __m256i valid_count =
+                            _mm256_cmpgt_epi32(
+                                _mm256_set1_epi32(count),
+                                lane_indices);
+
+
+                        // Exclude the point itself.
+                        const __m256i nonzero =
+                            _mm256_cmpgt_epi32(
+                                distance_squared,
+                                _mm256_setzero_si256());
+
+
+                        const __m256i within_radius =
+                            _mm256_xor_si256(
+                                _mm256_cmpgt_epi32(
+                                    distance_squared,
+                                    max_distance_squared),
+                                _mm256_set1_epi32(-1));
+
+
+                        const __m256i valid =
+                            _mm256_and_si256(
+                                valid_count,
+                                _mm256_and_si256(
+                                    nonzero,
+                                    within_radius));
+
+
+                        const __m256 distance_float =
+                            _mm256_cvtepi32_ps(
+                                distance_squared);
+
+
+                        const __m256 inverse_distance =
+                            _mm256_div_ps(
+                                _mm256_set1_ps(1.0f),
+                                distance_float);
+
+
+                        const __m256 weight =
+                            _mm256_and_ps(
+                                inverse_distance,
+                                _mm256_castsi256_ps(valid));
+
+
+                        const __m256 contribution_x =
+                            _mm256_mul_ps(
+                                _mm256_cvtepi32_ps(dx),
+                                weight);
+
+                        const __m256 contribution_y =
+                            _mm256_mul_ps(
+                                _mm256_cvtepi32_ps(dy),
+                                weight);
+
+
+                        repulsion_x +=
+                            horizontal_sum(contribution_x);
+
+                        repulsion_y +=
+                            horizontal_sum(contribution_y);
+                    }
                 }
 
-                const int cell_index =
-                    neighbor_cell_y * spatial_grid_side +
-                    neighbor_cell_x;
 
-                /*
-                * Only stored points participate.
-                * Overflow points are intentionally ignored for now.
-                */
-                const int count = chunk.spatial_cell_counts[cell_index];
+                const std::int32_t world_x =
+                    grid_x * chunk_side +
+                    point_x -
+                    point_area_offset;
 
-                if (count == 0) {
-                    continue;
+                const std::int32_t world_y =
+                    grid_y * chunk_side +
+                    point_y -
+                    point_area_offset;
+
+
+                const float random_angle =
+                    hash_random(
+                        seed ^ 0xA511E9B3u,
+                        world_x,
+                        world_y)
+                    * 2.0f * pi;
+
+
+                const float random_x =
+                    std::cos(random_angle);
+
+                const float random_y =
+                    std::sin(random_angle);
+
+
+                constexpr float repulsion_strength = 1.5f;
+
+
+                const float direction_x =
+                    random_x +
+                    repulsion_x * repulsion_strength;
+
+                const float direction_y =
+                    random_y +
+                    repulsion_y * repulsion_strength;
+
+
+                float direction =
+                    std::atan2(
+                        direction_y,
+                        direction_x);
+
+
+                if (direction < 0.0f) {
+                    direction += 2.0f * pi;
                 }
 
-                /*
-                 * Load all eight byte coordinates and widen them
-                 * to eight 32-bit AVX2 lanes.
-                 */
-                const __m128i packed_x =
-                    _mm_loadl_epi64(
-                        reinterpret_cast<const __m128i*>(
-                            chunk.spatial_cells_x[cell_index].data()));
 
-                const __m128i packed_y =
-                    _mm_loadl_epi64(
-                        reinterpret_cast<const __m128i*>(
-                            chunk.spatial_cells_y[cell_index].data()));
-
-                const __m256i neighbor_x =
-                    _mm256_cvtepu8_epi32(packed_x);
-
-                const __m256i neighbor_y =
-                    _mm256_cvtepu8_epi32(packed_y);
-
-                /*
-                 * Vector points away from the neighbor:
-                 *
-                 * current - neighbor
-                 */
-                const __m256i dx =
-                    _mm256_sub_epi32(
-                        _mm256_set1_epi32(point_x),
-                        neighbor_x);
-
-                const __m256i dy =
-                    _mm256_sub_epi32(
-                        _mm256_set1_epi32(point_y),
-                        neighbor_y);
-
-                const __m256i distance_squared =
-                    _mm256_add_epi32(
-                        _mm256_mullo_epi32(dx, dx),
-                        _mm256_mullo_epi32(dy, dy));
-
-                /*
-                 * lane < count
-                 */
-                const __m256i valid_count =
-                    _mm256_cmpgt_epi32(
-                        _mm256_set1_epi32(count),
-                        lane_indices);
-
-                /*
-                 * distance_squared > 0 excludes the point itself.
-                 */
-                const __m256i nonzero =
-                    _mm256_cmpgt_epi32(
-                        distance_squared,
-                        _mm256_setzero_si256());
-
-                /*
-                 * distance_squared <= radius^2
-                 */
-                const __m256i within_radius =
-                    _mm256_xor_si256(
-                        _mm256_cmpgt_epi32(
-                            distance_squared,
-                            max_distance_squared),
-                        _mm256_set1_epi32(-1));
-
-                const __m256i valid =
-                    _mm256_and_si256(
-                        valid_count,
-                        _mm256_and_si256(
-                            nonzero,
-                            within_radius));
-
-                const __m256 distance_float =
-                    _mm256_cvtepi32_ps(
-                        distance_squared);
-
-                /*
-                 * Weight = 1 / d^2.
-                 */
-                const __m256 inverse_distance =
-                    _mm256_div_ps(
-                        _mm256_set1_ps(1.0f),
-                        distance_float);
-
-                const __m256 weight =
-                    _mm256_and_ps(
-                        inverse_distance,
-                        _mm256_castsi256_ps(valid));
-
-                const __m256 contribution_x =
-                    _mm256_mul_ps(
-                        _mm256_cvtepi32_ps(dx),
-                        weight);
-
-                const __m256 contribution_y =
-                    _mm256_mul_ps(
-                        _mm256_cvtepi32_ps(dy),
-                        weight);
-
-                repulsion_x +=
-                    horizontal_sum(contribution_x);
-
-                repulsion_y +=
-                    horizontal_sum(contribution_y);
+                chunk.region_directions[point_index] =
+                    direction;
             }
         }
-
-        /*
-         * Convert support-area coordinates back to world coordinates.
-         */
-        const std::int32_t world_x =
-            grid_x * chunk_side +
-            point_x -
-            point_area_offset;
-
-        const std::int32_t world_y =
-            grid_y * chunk_side +
-            point_y -
-            point_area_offset;
-
-        /*
-         * Independent deterministic random stream.
-         */
-        const float random_angle =
-            hash_random(
-                seed ^ 0xA511E9B3u,
-                world_x,
-                world_y)
-            * 2.0f * pi;
-
-        const float random_x =
-            std::cos(random_angle);
-
-        const float random_y =
-            std::sin(random_angle);
-
-        /*
-         * Initial tuning value.
-         *
-         * Random direction always contributes length 1.
-         * Nearby points push the result away from themselves.
-         */
-        constexpr float repulsion_strength = 1.5f;
-
-        const float direction_x =
-            random_x +
-            repulsion_x * repulsion_strength;
-
-        const float direction_y =
-            random_y +
-            repulsion_y * repulsion_strength;
-
-        float direction =
-            std::atan2(
-                direction_y,
-                direction_x);
-
-        if (direction < 0.0f) {
-            direction += 2.0f * pi;
-        }
-
-        chunk.region_directions[point_index] =
-            direction;
     }
 }
 
