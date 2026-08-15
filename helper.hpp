@@ -8,7 +8,8 @@
 float hash_random(uint32_t seed, int32_t x, int32_t y);
 uint16_t hash_random_uint16_t(uint32_t seed, int32_t x, int32_t y);
 float new_random(float current);
-
+std::uint32_t new_random_bits(std::uint32_t x);
+std::uint32_t hash_random_uint32_t(std::uint32_t seed, std::int32_t x, std::int32_t y);
 template <std::size_t N>
 class IntQueue {
 private:

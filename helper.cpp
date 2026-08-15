@@ -32,6 +32,25 @@ uint16_t hash_random_uint16_t(uint32_t seed, int32_t x, int32_t y)
     return static_cast<uint16_t>(h);
 }
 
+std::uint32_t hash_random_uint32_t(
+    std::uint32_t seed,
+    std::int32_t x,
+    std::int32_t y)
+{
+    std::uint32_t h = seed;
+
+    h ^= static_cast<std::uint32_t>(x) * 374761393u;
+    h ^= static_cast<std::uint32_t>(y) * 668265263u;
+
+    h ^= h >> 16;
+    h *= 2246822519u;
+    h ^= h >> 13;
+    h *= 3266489917u;
+    h ^= h >> 16;
+
+    return h;
+}
+
 float new_random(float current)
 {
     std::uint32_t x;
@@ -49,4 +68,15 @@ float new_random(float current)
     std::memcpy(&result, &x, sizeof(result));
 
     return result - 1.0f;
+}
+
+std::uint32_t new_random_bits(std::uint32_t x)
+{
+    x ^= x >> 16;
+    x *= 0x7feb352dU;
+    x ^= x >> 15;
+    x *= 0x846ca68bU;
+    x ^= x >> 16;
+
+    return x;
 }

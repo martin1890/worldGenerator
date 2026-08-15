@@ -62,6 +62,146 @@ static constexpr float markov_matrix[5][5] = {
     {0.00, 0.00, 0.00, 0.90, 0.10}
 };
 
+constexpr std::array<std::array<int, 8>, 4>
+make_markov_thresholds()
+{
+    std::array<std::array<int, 8>, 4> thresholds{};
+
+    for (int state = 0; state < 5; ++state) {
+
+        float cumulative = 0.0f;
+
+        for (int boundary = 0; boundary < 4; ++boundary) {
+
+            cumulative +=
+                markov_matrix[state][boundary];
+
+            const float scaled =
+                cumulative * 256.0f;
+
+            int threshold =
+                static_cast<int>(scaled);
+
+            if (static_cast<float>(threshold) < scaled) {
+                ++threshold;
+            }
+
+            if (threshold < 0) {
+                threshold = 0;
+            }
+            else if (threshold > 256) {
+                threshold = 256;
+            }
+
+            /*
+             * Store threshold - 1 so:
+             *
+             * random > threshold - 1
+             *
+             * is equivalent to:
+             *
+             * random >= threshold.
+             */
+            thresholds[boundary][state] =
+                threshold - 1;
+        }
+    }
+
+    /*
+     * Lanes 5..7 are never selected because Markov state
+     * is always in the range 0..4.
+     */
+    return thresholds;
+}
+
+
+static constexpr auto markov_thresholds =
+    make_markov_thresholds();
+
+
+inline __m256i new_random_bits_x8(
+    __m256i x)
+{
+    x = _mm256_xor_si256(
+        x,
+        _mm256_srli_epi32(x, 16));
+
+    x = _mm256_mullo_epi32(
+        x,
+        _mm256_set1_epi32(
+            static_cast<int>(0x7feb352dU)));
+
+    x = _mm256_xor_si256(
+        x,
+        _mm256_srli_epi32(x, 15));
+
+    x = _mm256_mullo_epi32(
+        x,
+        _mm256_set1_epi32(
+            static_cast<int>(0x846ca68bU)));
+
+    x = _mm256_xor_si256(
+        x,
+        _mm256_srli_epi32(x, 16));
+
+    return x;
+}
+
+
+inline __m256i sample_next_state_x8(
+    __m256i state,
+    __m256i random_bits)
+{
+    /*
+     * Use the high byte as a value in 0..255.
+     */
+    const __m256i random_byte =
+        _mm256_srli_epi32(
+            random_bits,
+            24);
+
+    __m256i next_state =
+        _mm256_setzero_si256();
+
+    /*
+     * For each of the four boundaries, fetch the cumulative
+     * threshold belonging to each lane's current Markov state.
+     *
+     * Counting how many boundaries random has passed gives
+     * the resulting state directly.
+     */
+    for (int boundary = 0;
+         boundary < 4;
+         ++boundary) {
+
+        const __m256i threshold_table =
+            _mm256_loadu_si256(
+                reinterpret_cast<const __m256i*>(
+                    markov_thresholds[boundary].data()));
+
+        const __m256i threshold =
+            _mm256_permutevar8x32_epi32(
+                threshold_table,
+                state);
+
+        const __m256i passed =
+            _mm256_cmpgt_epi32(
+                random_byte,
+                threshold);
+
+        /*
+         * passed is either 0 or -1.
+         * Subtracting -1 adds one.
+         */
+        next_state =
+            _mm256_sub_epi32(
+                next_state,
+                passed);
+    }
+
+    return next_state;
+}
+
 constexpr std::array<float, 8> grid_dir_x = {
      1.0f,
      0.70710678118f,
@@ -890,19 +1030,19 @@ void create_region_curves(
     std::vector<uint8_t>& curve_max_y,
     std::vector<std::array<std::uint16_t, 16>>& temporary_curves,
     std::vector<std::uint16_t>& curve_region_indices,
-    std::vector<std::uint16_t>& region_curve_indices) 
+    std::vector<std::uint16_t>& region_curve_indices)
 {
-    /*
-     * Keep region_curves parallel with the other region vectors.
-     * Points outside the curve-producing area remain zero.
-     */
-    const std::size_t point_count = chunk.regions_x.size();
+    const std::size_t point_count =
+        chunk.regions_x.size();
 
-    curve_min_x.reserve(point_count);
-    curve_max_x.reserve(point_count);
-    curve_min_y.reserve(point_count);
-    curve_max_y.reserve(point_count);
-    temporary_curves.reserve(point_count);
+
+    /*
+     * First collect all regions that actually produce support curves.
+     *
+     * This gives the SIMD generator one compact list instead of
+     * mixing cell traversal with curve generation.
+     */
+    curve_region_indices.clear();
     curve_region_indices.reserve(point_count);
 
     for (int cell_y = curve_support_min_cell;
@@ -918,9 +1058,7 @@ void create_region_curves(
                 cell_x;
 
             const int count =
-                chunk.spatial_cell_counts[
-                    cell_index];
-
+                chunk.spatial_cell_counts[cell_index];
 
             for (int slot = 0;
                  slot < count;
@@ -930,152 +1068,500 @@ void create_region_curves(
                     chunk.spatial_cells_indices[
                         cell_index][slot];
 
-                const std::uint8_t point_x =
-                    chunk.regions_x[point_index];
+                const std::uint16_t curve_index =
+                    static_cast<std::uint16_t>(
+                        curve_region_indices.size());
 
-                const std::uint8_t point_y =
-                    chunk.regions_y[point_index];
-
-
-                std::uint8_t curve_x = point_x;
-                std::uint8_t curve_y = point_y;
-
-                std::uint8_t min_x = curve_x;
-                std::uint8_t max_x = curve_x;
-                std::uint8_t min_y = curve_y;
-                std::uint8_t max_y = curve_y;
-
-
-                std::array<std::uint16_t, 16>
-                    temporary_curve;
-
-                temporary_curve.fill(0xFFFFu);
-
-                /*
-                 * Position 0 is the curve origin.
-                 */
-                temporary_curve[0] =
-                    (static_cast<std::uint16_t>(curve_x) << 8) |
-                    static_cast<std::uint16_t>(curve_y);
-
-
-                const std::int32_t world_x =
-                    grid_x * chunk_side +
-                    point_x -
-                    point_area_offset;
-
-                const std::int32_t world_y =
-                    grid_y * chunk_side +
-                    point_y -
-                    point_area_offset;
-
-
-                float random_value =
-                    hash_random(
-                        seed ^ 0x6C8E9CF5u,
-                        world_x,
-                        world_y);
-
-                const float main_angle =
-                    chunk.region_directions[
-                        point_index];
-
-                int state = 2;
-
-
-                for (int step = 0;
-                     step < curve_step_count;
-                     ++step) {
-
-                    const float state_offset =
-                        static_cast<float>(
-                            state - 2) *
-                        grid_angle_step;
-
-                    const float desired_angle =
-                        main_angle +
-                        state_offset;
-
-
-                    random_value =
-                        new_random(
-                            random_value);
-
-                    const std::uint8_t grid_direction =
-                        angle_to_grid_direction(
-                            desired_angle,
-                            main_angle,
-                            random_value);
-
-
-                    curve_x +=
-                        curve_dx[grid_direction];
-
-                    curve_y +=
-                        curve_dy[grid_direction];
-
-
-                    min_x =
-                        std::min(
-                            min_x,
-                            curve_x);
-
-                    max_x =
-                        std::max(
-                            max_x,
-                            curve_x);
-
-                    min_y =
-                        std::min(
-                            min_y,
-                            curve_y);
-
-                    max_y =
-                        std::max(
-                            max_y,
-                            curve_y);
-
-
-                    /*
-                     * step 0 becomes position 1.
-                     * step 7 becomes position 8.
-                     */
-                    temporary_curve[step + 1] =
-                        (static_cast<std::uint16_t>(curve_x) << 8) |
-                        static_cast<std::uint16_t>(curve_y);
-
-
-                    random_value =
-                        new_random(
-                            random_value);
-
-                    state =
-                        sample_next_state(
-                            state,
-                            random_value);
-                }
-                const std::uint16_t curve_index = static_cast<std::uint16_t>(temporary_curves.size());
-
-                region_curve_indices[point_index] = curve_index;
+                region_curve_indices[point_index] =
+                    curve_index;
 
                 curve_region_indices.push_back(
                     point_index);
-
-                curve_min_x.push_back(
-                    min_x);
-
-                curve_max_x.push_back(
-                    max_x);
-
-                curve_min_y.push_back(
-                    min_y);
-
-                curve_max_y.push_back(
-                    max_y);
-
-                temporary_curves.push_back(
-                    temporary_curve);
             }
+        }
+    }
+
+
+    const std::size_t curve_count =
+        curve_region_indices.size();
+
+    curve_min_x.resize(curve_count);
+    curve_max_x.resize(curve_count);
+    curve_min_y.resize(curve_count);
+    curve_max_y.resize(curve_count);
+
+    temporary_curves.resize(curve_count);
+
+    if (curve_count == 0) {
+        return;
+    }
+
+
+    /*
+     * Integer direction lookup tables.
+     *
+     * _mm256_permutevar8x32_epi32 lets each SIMD lane select
+     * its own direction without a gather.
+     */
+    const __m256i dx_lookup =
+        _mm256_setr_epi32(
+             1,  1,  0, -1,
+            -1, -1,  0,  1);
+
+    const __m256i dy_lookup =
+        _mm256_setr_epi32(
+             0,  1,  1,  1,
+             0, -1, -1, -1);
+
+
+    const __m256i direction_mask =
+        _mm256_set1_epi32(7);
+
+    const __m256i one =
+        _mm256_set1_epi32(1);
+
+    const __m256i state_center =
+        _mm256_set1_epi32(2);
+
+
+    /*
+     * main_angle / grid_angle_step
+     *
+     * Multiplication is cheaper than performing eight divisions.
+     */
+    const __m256 inverse_grid_angle_step =
+        _mm256_set1_ps(
+            1.0f / grid_angle_step);
+
+    /*
+     * Direction random uses the high 24 random bits.
+     *
+     * 2^24 fits comfortably in signed int32 and matches the
+     * useful precision of a float.
+     */
+    constexpr float direction_random_scale =
+        16777216.0f;
+
+    const __m256 direction_random_scale_vector =
+        _mm256_set1_ps(
+            direction_random_scale);
+
+
+    /*
+     * World coordinate base.
+     *
+     * Unsigned wrap is intentional and matches the deterministic
+     * coordinate hashing used elsewhere.
+     */
+    const std::uint32_t world_base_x =
+        static_cast<std::uint32_t>(grid_x) *
+            static_cast<std::uint32_t>(chunk_side) -
+        static_cast<std::uint32_t>(point_area_offset);
+
+    const std::uint32_t world_base_y =
+        static_cast<std::uint32_t>(grid_y) *
+            static_cast<std::uint32_t>(chunk_side) -
+        static_cast<std::uint32_t>(point_area_offset);
+
+    const __m256i world_base_x_vector =
+        _mm256_set1_epi32(
+            static_cast<int>(world_base_x));
+
+    const __m256i world_base_y_vector =
+        _mm256_set1_epi32(
+            static_cast<int>(world_base_y));
+
+    const __m256i random_seed =
+        _mm256_set1_epi32(
+            static_cast<int>(
+                seed ^ 0x6C8E9CF5u));
+
+
+    /*
+     * Temporary AoSoA working storage.
+     *
+     * Each row is one curve position.
+     * Each column is one SIMD lane / curve.
+     *
+     * After generation it is transposed into the existing AoS
+     * temporary_curves layout used by collision detection.
+     */
+    alignas(32) std::uint32_t
+        generated_points[region_length][8];
+
+    alignas(32) int point_indices[8];
+    alignas(32) int point_x_values[8];
+    alignas(32) int point_y_values[8];
+
+    alignas(32) int min_x_values[8];
+    alignas(32) int max_x_values[8];
+    alignas(32) int min_y_values[8];
+    alignas(32) int max_y_values[8];
+
+
+    for (std::size_t batch_start = 0;
+         batch_start < curve_count;
+         batch_start += 8) {
+
+        const int valid_count =
+            static_cast<int>(
+                std::min<std::size_t>(
+                    8,
+                    curve_count - batch_start));
+
+        /*
+         * AVX2 has no need for a separate scalar tail here.
+         *
+         * Invalid lanes duplicate the last real curve in the batch.
+         * They execute normally, but their results are simply not
+         * written to the output.
+         */
+        const std::uint16_t fallback_region =
+            curve_region_indices[
+                batch_start +
+                static_cast<std::size_t>(
+                    valid_count - 1)];
+
+        for (int lane = 0;
+             lane < 8;
+             ++lane) {
+
+            const std::uint16_t point_index =
+                lane < valid_count
+                    ? curve_region_indices[
+                        batch_start +
+                        static_cast<std::size_t>(lane)]
+                    : fallback_region;
+
+            point_indices[lane] =
+                static_cast<int>(point_index);
+
+            point_x_values[lane] =
+                static_cast<int>(
+                    chunk.regions_x[point_index]);
+
+            point_y_values[lane] =
+                static_cast<int>(
+                    chunk.regions_y[point_index]);
+        }
+
+
+        const __m256i region_indices =
+            _mm256_load_si256(
+                reinterpret_cast<const __m256i*>(
+                    point_indices));
+
+        __m256i curve_x =
+            _mm256_load_si256(
+                reinterpret_cast<const __m256i*>(
+                    point_x_values));
+
+        __m256i curve_y =
+            _mm256_load_si256(
+                reinterpret_cast<const __m256i*>(
+                    point_y_values));
+
+
+        __m256i min_x = curve_x;
+        __m256i max_x = curve_x;
+        __m256i min_y = curve_y;
+        __m256i max_y = curve_y;
+
+
+        /*
+         * Gather eight main angles.
+         */
+        const __m256 main_angle =
+            _mm256_i32gather_ps(
+                chunk.region_directions.data(),
+                region_indices,
+                sizeof(float));
+
+
+        /*
+         * Quantize main_angle ONCE for the whole curve.
+         *
+         * grid_position = integer direction + fractional position.
+         *
+         * Adding a Markov state later only changes the integer part,
+         * because every state offset is exactly one 45-degree step.
+         */
+        const __m256 grid_position =
+            _mm256_mul_ps(
+                main_angle,
+                inverse_grid_angle_step);
+
+        const __m256 base_direction_float =
+            _mm256_floor_ps(
+                grid_position);
+
+        const __m256 fraction =
+            _mm256_sub_ps(
+                grid_position,
+                base_direction_float);
+
+        const __m256i base_direction =
+            _mm256_cvttps_epi32(
+                base_direction_float);
+
+
+        /*
+         * Convert the fractional direction probability once into an
+         * integer threshold in 0..2^24.
+         */
+        const __m256i direction_threshold =
+            _mm256_cvttps_epi32(
+                _mm256_mul_ps(
+                    fraction,
+                    direction_random_scale_vector));
+
+
+        /*
+         * Initial independent PRNG state for all eight curves.
+         */
+        const __m256i world_x =
+            _mm256_add_epi32(
+                world_base_x_vector,
+                curve_x);
+
+        const __m256i world_y =
+            _mm256_add_epi32(
+                world_base_y_vector,
+                curve_y);
+
+        __m256i random_bits =
+            hash_u32x8(
+                random_seed,
+                world_x,
+                world_y);
+
+
+        /*
+         * Every curve starts in Markov state 2: straight.
+         */
+        __m256i state =
+            state_center;
+
+
+        /*
+         * Store position zero.
+         */
+        const __m256i initial_tiles =
+            _mm256_or_si256(
+                _mm256_slli_epi32(
+                    curve_x,
+                    8),
+                curve_y);
+
+        _mm256_store_si256(
+            reinterpret_cast<__m256i*>(
+                generated_points[0]),
+            initial_tiles);
+
+
+        for (int step = 0;
+             step < curve_step_count;
+             ++step) {
+
+            /*
+             * First random value chooses between the two neighboring
+             * grid directions.
+             */
+            random_bits =
+                new_random_bits_x8(
+                    random_bits);
+
+            /*
+             * The high 24 bits form an integer random value
+             * in 0..2^24-1.
+             */
+            const __m256i direction_random =
+                _mm256_srli_epi32(
+                    random_bits,
+                    8);
+
+            /*
+             * random < threshold selects the upper grid direction.
+             */
+            const __m256i use_upper_mask =
+                _mm256_cmpgt_epi32(
+                    direction_threshold,
+                    direction_random);
+
+            const __m256i use_upper =
+                _mm256_and_si256(
+                    use_upper_mask,
+                    one);
+
+
+            /*
+             * Markov state:
+             *
+             * 0 -> -2 grid directions
+             * 1 -> -1
+             * 2 ->  0
+             * 3 -> +1
+             * 4 -> +2
+             *
+             * No +-90 degree pruning is needed anymore.
+             */
+            __m256i grid_direction =
+                _mm256_add_epi32(
+                    base_direction,
+                    _mm256_sub_epi32(
+                        state,
+                        state_center));
+
+            grid_direction =
+                _mm256_add_epi32(
+                    grid_direction,
+                    use_upper);
+
+            grid_direction =
+                _mm256_and_si256(
+                    grid_direction,
+                    direction_mask);
+
+
+            /*
+             * Eight independent direction lookups without gathers.
+             */
+            const __m256i dx =
+                _mm256_permutevar8x32_epi32(
+                    dx_lookup,
+                    grid_direction);
+
+            const __m256i dy =
+                _mm256_permutevar8x32_epi32(
+                    dy_lookup,
+                    grid_direction);
+
+
+            curve_x =
+                _mm256_add_epi32(
+                    curve_x,
+                    dx);
+
+            curve_y =
+                _mm256_add_epi32(
+                    curve_y,
+                    dy);
+
+
+            min_x =
+                _mm256_min_epi32(
+                    min_x,
+                    curve_x);
+
+            max_x =
+                _mm256_max_epi32(
+                    max_x,
+                    curve_x);
+
+            min_y =
+                _mm256_min_epi32(
+                    min_y,
+                    curve_y);
+
+            max_y =
+                _mm256_max_epi32(
+                    max_y,
+                    curve_y);
+
+
+            const __m256i tiles =
+                _mm256_or_si256(
+                    _mm256_slli_epi32(
+                        curve_x,
+                        8),
+                    curve_y);
+
+            _mm256_store_si256(
+                reinterpret_cast<__m256i*>(
+                    generated_points[step + 1]),
+                tiles);
+
+
+            /*
+             * Second random value advances the Markov chain.
+             */
+            random_bits =
+                new_random_bits_x8(
+                    random_bits);
+
+            state =
+                sample_next_state_x8(
+                    state,
+                    random_bits);
+        }
+
+
+        _mm256_store_si256(
+            reinterpret_cast<__m256i*>(
+                min_x_values),
+            min_x);
+
+        _mm256_store_si256(
+            reinterpret_cast<__m256i*>(
+                max_x_values),
+            max_x);
+
+        _mm256_store_si256(
+            reinterpret_cast<__m256i*>(
+                min_y_values),
+            min_y);
+
+        _mm256_store_si256(
+            reinterpret_cast<__m256i*>(
+                max_y_values),
+            max_y);
+
+
+        /*
+         * Transpose the temporary AoSoA batch into the existing
+         * curve-major AoS representation.
+         *
+         * Only real lanes are stored, so the padded SIMD tail costs
+         * no special scalar curve-generation path.
+         */
+        for (int lane = 0;
+             lane < valid_count;
+             ++lane) {
+
+            const std::size_t curve_index =
+                batch_start +
+                static_cast<std::size_t>(lane);
+
+            auto& temporary_curve =
+                temporary_curves[curve_index];
+
+            temporary_curve.fill(0xFFFFu);
+
+            for (int position = 0;
+                 position < region_length;
+                 ++position) {
+
+                temporary_curve[position] =
+                    static_cast<std::uint16_t>(
+                        generated_points[position][lane]);
+            }
+
+
+            curve_min_x[curve_index] =
+                static_cast<std::uint8_t>(
+                    min_x_values[lane]);
+
+            curve_max_x[curve_index] =
+                static_cast<std::uint8_t>(
+                    max_x_values[lane]);
+
+            curve_min_y[curve_index] =
+                static_cast<std::uint8_t>(
+                    min_y_values[lane]);
+
+            curve_max_y[curve_index] =
+                static_cast<std::uint8_t>(
+                    max_y_values[lane]);
         }
     }
 
