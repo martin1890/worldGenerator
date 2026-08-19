@@ -126,17 +126,46 @@ struct PairHash {
 };
 
 struct RegionLocationsChunk {
+
+    enum class ChunkGenerationState : std::uint8_t {
+        Empty,
+        CurvesPrepared,
+        Finished
+    };
+
+    ChunkGenerationState generation_state = ChunkGenerationState::Empty;
+    std::uint16_t received_neighbor_mask = 0;
+
+    std::array<
+        std::array<std::uint8_t, spatial_grid_side>,
+        spatial_grid_side>
+        cell_generation_state{};
+
+    /*
+    * Cell generation states:
+    * 0 = empty
+    * 1 = points available
+    * 2 = points + directions available
+    * 3 = points + directions + curves available
+    */
+
     std::vector<std::uint8_t> regions_x;
     std::vector<std::uint8_t> regions_y;
     std::vector<std::uint16_t> region_weights;
     std::vector<float> region_directions;
     std::vector<std::uint32_t> region_curves;
 
+    std::vector<std::uint8_t> curve_min_x;
+    std::vector<std::uint8_t> curve_max_x;
+    std::vector<std::uint8_t> curve_min_y;
+    std::vector<std::uint8_t> curve_max_y;
+
+    std::vector<std::uint16_t> region_curve_indices;
+    std::vector<std::array<std::uint16_t, 16>> temporary_curves;
+
     std::array<std::array<std::uint8_t, cell_capacity>, spatial_cell_count> spatial_cells_x{};
     std::array<std::array<std::uint8_t, cell_capacity>, spatial_cell_count> spatial_cells_y{};
     std::array<std::array<std::uint16_t, cell_capacity>, spatial_cell_count> spatial_cells_indices{};
-
-
 
     std::array<std::uint8_t, spatial_cell_count> spatial_cell_counts{};
     std::vector<std::uint8_t> overflow_cells;

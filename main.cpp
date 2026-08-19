@@ -514,26 +514,17 @@ int main()
                 };
 
 
+                region_distribution(
+                    world_seed,
+                    chunk_x,
+                    chunk_y,
+                    grid);
+
                 auto chunk_iterator =
                     grid.find(key);
 
-                if (chunk_iterator ==
-                    grid.end()) {
-
-                    region_distribution(
-                        world_seed,
-                        chunk_x,
-                        chunk_y,
-                        grid);
-
-                    chunk_iterator =
-                        grid.find(key);
-
-                    if (chunk_iterator ==
-                        grid.end()) {
-
-                        continue;
-                    }
+                if (chunk_iterator == grid.end()) {
+                    continue;
                 }
 
 

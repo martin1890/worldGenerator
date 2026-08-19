@@ -20,7 +20,7 @@ constexpr int hash_width = 8;
 constexpr int maxima_width = 16;
 
 constexpr int weight_field_offset =
-    point_area_offset + maxima_radius; // 18
+    point_area_offset + maxima_radius; // 26
 
 constexpr int curve_support_min_cell =
     direction_halo_cells;                       // 1
@@ -28,7 +28,6 @@ constexpr int curve_support_min_cell =
 constexpr int curve_support_max_cell =
     spatial_grid_side -
     direction_halo_cells - 1;                    // 8
-
 
 constexpr int chunk_curve_min_cell =
     direction_halo_cells +
@@ -38,8 +37,20 @@ constexpr int chunk_curve_max_cell =
     chunk_curve_min_cell +
     chunk_cell_side - 1;                         // 6
 
+constexpr int chunk_cell_offset =
+    chunk_side / spatial_cell_side; // 4
+
 constexpr int curve_collision_radius = 1;
 
+constexpr int cells_per_maxima_block =
+    maxima_width / spatial_cell_side; // 2
+
+constexpr int maxima_blocks_per_cell_row =
+    spatial_grid_side /
+    cells_per_maxima_block; // 5
+
+static_assert(maxima_width == spatial_cell_side * cells_per_maxima_block);
+static_assert(spatial_grid_side % cells_per_maxima_block == 0);
 static_assert(region_points_side == 80);
 static_assert(weight_field_side == 84);
 static_assert(weight_field_stride == 88);
@@ -53,6 +64,8 @@ static_assert(curve_support_min_cell == 1);
 static_assert(curve_support_max_cell == 8);
 static_assert(chunk_curve_min_cell == 3);
 static_assert(chunk_curve_max_cell == 6);
+static_assert(spatial_cell_side % hash_width == 0);
+static_assert(chunk_cell_offset % cells_per_maxima_block == 0);
 
 static constexpr float markov_matrix[5][5] = {
     {0.10, 0.90, 0.00, 0.00, 0.00},
@@ -61,6 +74,31 @@ static constexpr float markov_matrix[5][5] = {
     {0.00, 0.00, 0.50, 0.30, 0.20},
     {0.00, 0.00, 0.00, 0.90, 0.10}
 };
+
+constexpr std::uint16_t neighbor_top_left     = 1u << 0;
+constexpr std::uint16_t neighbor_top          = 1u << 1;
+constexpr std::uint16_t neighbor_top_right    = 1u << 2;
+constexpr std::uint16_t neighbor_left         = 1u << 3;
+constexpr std::uint16_t neighbor_right        = 1u << 4;
+constexpr std::uint16_t neighbor_bottom_left  = 1u << 5;
+constexpr std::uint16_t neighbor_bottom       = 1u << 6;
+constexpr std::uint16_t neighbor_bottom_right = 1u << 7;
+
+std::uint16_t neighbor_bit(
+    int dx,
+    int dy)
+{
+    if (dx == -1 && dy == -1) return neighbor_top_left;
+    if (dx ==  0 && dy == -1) return neighbor_top;
+    if (dx ==  1 && dy == -1) return neighbor_top_right;
+
+    if (dx == -1 && dy ==  0) return neighbor_left;
+    if (dx ==  1 && dy ==  0) return neighbor_right;
+
+    if (dx == -1 && dy ==  1) return neighbor_bottom_left;
+    if (dx ==  0 && dy ==  1) return neighbor_bottom;
+    return neighbor_bottom_right;
+}
 
 constexpr std::array<std::array<int, 8>, 4>
 make_markov_thresholds()
@@ -73,14 +111,9 @@ make_markov_thresholds()
 
         for (int boundary = 0; boundary < 4; ++boundary) {
 
-            cumulative +=
-                markov_matrix[state][boundary];
-
-            const float scaled =
-                cumulative * 256.0f;
-
-            int threshold =
-                static_cast<int>(scaled);
+            cumulative += markov_matrix[state][boundary];
+            const float scaled = cumulative * 256.0f;
+            int threshold =static_cast<int>(scaled);
 
             if (static_cast<float>(threshold) < scaled) {
                 ++threshold;
@@ -102,8 +135,7 @@ make_markov_thresholds()
              *
              * random >= threshold.
              */
-            thresholds[boundary][state] =
-                threshold - 1;
+            thresholds[boundary][state] = threshold - 1;
         }
     }
 
@@ -114,54 +146,28 @@ make_markov_thresholds()
     return thresholds;
 }
 
-
-static constexpr auto markov_thresholds =
-    make_markov_thresholds();
+static constexpr auto markov_thresholds = make_markov_thresholds();
 
 
-inline __m256i new_random_bits_x8(
-    __m256i x)
+inline __m256i new_random_bits_x8(__m256i x)
 {
-    x = _mm256_xor_si256(
-        x,
-        _mm256_srli_epi32(x, 16));
-
-    x = _mm256_mullo_epi32(
-        x,
-        _mm256_set1_epi32(
-            static_cast<int>(0x7feb352dU)));
-
-    x = _mm256_xor_si256(
-        x,
-        _mm256_srli_epi32(x, 15));
-
-    x = _mm256_mullo_epi32(
-        x,
-        _mm256_set1_epi32(
-            static_cast<int>(0x846ca68bU)));
-
-    x = _mm256_xor_si256(
-        x,
-        _mm256_srli_epi32(x, 16));
+    x = _mm256_xor_si256(x, _mm256_srli_epi32(x, 16));
+    x = _mm256_mullo_epi32(x, _mm256_set1_epi32(static_cast<int>(0x7feb352dU)));
+    x = _mm256_xor_si256(x, _mm256_srli_epi32(x, 15));
+    x = _mm256_mullo_epi32(x, _mm256_set1_epi32(static_cast<int>(0x846ca68bU)));
+    x = _mm256_xor_si256(x, _mm256_srli_epi32(x, 16));
 
     return x;
 }
 
 
-inline __m256i sample_next_state_x8(
-    __m256i state,
-    __m256i random_bits)
+inline __m256i sample_next_state_x8(__m256i state, __m256i random_bits)
 {
     /*
      * Use the high byte as a value in 0..255.
      */
-    const __m256i random_byte =
-        _mm256_srli_epi32(
-            random_bits,
-            24);
-
-    __m256i next_state =
-        _mm256_setzero_si256();
+    const __m256i random_byte = _mm256_srli_epi32(random_bits, 24);
+    __m256i next_state = _mm256_setzero_si256();
 
     /*
      * For each of the four boundaries, fetch the cumulative
@@ -170,33 +176,16 @@ inline __m256i sample_next_state_x8(
      * Counting how many boundaries random has passed gives
      * the resulting state directly.
      */
-    for (int boundary = 0;
-         boundary < 4;
-         ++boundary) {
+    for (int boundary = 0; boundary < 4; ++boundary) {
 
-        const __m256i threshold_table =
-            _mm256_loadu_si256(
-                reinterpret_cast<const __m256i*>(
-                    markov_thresholds[boundary].data()));
-
-        const __m256i threshold =
-            _mm256_permutevar8x32_epi32(
-                threshold_table,
-                state);
-
-        const __m256i passed =
-            _mm256_cmpgt_epi32(
-                random_byte,
-                threshold);
-
+        const __m256i threshold_table = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(markov_thresholds[boundary].data()));
+        const __m256i threshold = _mm256_permutevar8x32_epi32(threshold_table, state);
+        const __m256i passed = _mm256_cmpgt_epi32(random_byte, threshold);
         /*
          * passed is either 0 or -1.
          * Subtracting -1 adds one.
          */
-        next_state =
-            _mm256_sub_epi32(
-                next_state,
-                passed);
+        next_state = _mm256_sub_epi32(next_state, passed);
     }
 
     return next_state;
@@ -225,9 +214,7 @@ constexpr std::array<float, 8> grid_dir_y = {
 };
 
 
-std::uint8_t delta_to_curve_direction(
-    int dx,
-    int dy)
+std::uint8_t delta_to_curve_direction(int dx, int dy)
 {
     if (dx ==  1 && dy ==  0) return 0;
     if (dx ==  1 && dy ==  1) return 1;
@@ -239,91 +226,45 @@ std::uint8_t delta_to_curve_direction(
     return 7;
 }
 
-
 constexpr float pi = 3.14159265358979323846f;
+constexpr float quarter_turn = pi * 0.5f;
+constexpr float grid_angle_step = pi * 0.25f;
 
-constexpr float quarter_turn =
-    pi * 0.5f;
-
-constexpr float grid_angle_step =
-    pi * 0.25f;
-
-
-
-
-inline __m256i hash_u32x8(
-    __m256i seed,
-    __m256i x,
-    __m256i y)
+inline __m256i hash_u32x8(__m256i seed, __m256i x, __m256i y)
 {
-    const __m256i mx =
-        _mm256_set1_epi32(static_cast<int>(374761393u));
-
-    const __m256i my =
-        _mm256_set1_epi32(static_cast<int>(668265263u));
-
-    const __m256i m1 =
-        _mm256_set1_epi32(static_cast<int>(2246822519u));
-
-    const __m256i m2 =
-        _mm256_set1_epi32(static_cast<int>(3266489917u));
+    const __m256i mx = _mm256_set1_epi32(static_cast<int>(374761393u));
+    const __m256i my = _mm256_set1_epi32(static_cast<int>(668265263u));
+    const __m256i m1 = _mm256_set1_epi32(static_cast<int>(2246822519u));
+    const __m256i m2 = _mm256_set1_epi32(static_cast<int>(3266489917u));
 
     __m256i h = seed;
 
-    h = _mm256_xor_si256(
-        h,
-        _mm256_mullo_epi32(x, mx));
-
-    h = _mm256_xor_si256(
-        h,
-        _mm256_mullo_epi32(y, my));
-
-    h = _mm256_xor_si256(
-        h,
-        _mm256_srli_epi32(h, 16));
-
+    h = _mm256_xor_si256(h, _mm256_mullo_epi32(x, mx));
+    h = _mm256_xor_si256(h, _mm256_mullo_epi32(y, my));
+    h = _mm256_xor_si256(h, _mm256_srli_epi32(h, 16));
     h = _mm256_mullo_epi32(h, m1);
-
-    h = _mm256_xor_si256(
-        h,
-        _mm256_srli_epi32(h, 13));
-
+    h = _mm256_xor_si256(h, _mm256_srli_epi32(h, 13));
     h = _mm256_mullo_epi32(h, m2);
-
-    h = _mm256_xor_si256(
-        h,
-        _mm256_srli_epi32(h, 16));
+    h = _mm256_xor_si256(h, _mm256_srli_epi32(h, 16));
 
     return h;
 }
 
 
-inline __m128i truncate_u32x8_to_u16x8(
-    __m256i values)
+inline __m128i truncate_u32x8_to_u16x8(__m256i values)
 {
-    values = _mm256_and_si256(
-        values,
-        _mm256_set1_epi32(0xFFFF));
+    values = _mm256_and_si256(values, _mm256_set1_epi32(0xFFFF));
 
-    const __m128i low =
-        _mm256_castsi256_si128(values);
+    const __m128i low = _mm256_castsi256_si128(values);
+    const __m128i high = _mm256_extracti128_si256(values, 1);
 
-    const __m128i high =
-        _mm256_extracti128_si256(values, 1);
-
-    return _mm_packus_epi32(
-        low,
-        high);
+    return _mm_packus_epi32(low, high);
 }
 
 
-inline __m256i greater_u16(
-    __m256i a,
-    __m256i b)
+inline __m256i greater_u16(__m256i a, __m256i b)
 {
-    const __m256i sign =
-        _mm256_set1_epi16(
-            static_cast<short>(0x8000));
+    const __m256i sign = _mm256_set1_epi16(static_cast<short>(0x8000));
 
     return _mm256_cmpgt_epi16(
         _mm256_xor_si256(a, sign),
@@ -364,17 +305,17 @@ void generate_weight_field(
     WeightField& field,
     std::uint32_t seed,
     std::int32_t grid_x,
-    std::int32_t grid_y)
+    std::int32_t grid_y,
+    int weight_min_x,
+    int weight_max_x,
+    int weight_min_y,
+    int weight_max_y)
 {
-    const __m256i seed_vector =
-        _mm256_set1_epi32(
-            static_cast<int>(seed));
-
+    const __m256i seed_vector = _mm256_set1_epi32(static_cast<int>(seed));
     const __m256i lane_offsets =
         _mm256_setr_epi32(
             0, 1, 2, 3,
             4, 5, 6, 7);
-
     /*
      * Use unsigned modulo arithmetic deliberately so negative
      * world coordinates behave deterministically.
@@ -395,9 +336,9 @@ void generate_weight_field(
         chunk_world_y -
         static_cast<std::uint32_t>(weight_field_offset);
 
-    for (int y = 0;
-         y < weight_field_side;
-         ++y) {
+    for (int y = weight_min_y;
+        y <= weight_max_y;
+        ++y) {
 
         const __m256i y_vector =
             _mm256_set1_epi32(
@@ -414,8 +355,8 @@ void generate_weight_field(
          * 68 logical values are needed, but all 72 stored values
          * are generated so every row is pure SIMD.
          */
-        for (int x = 0;
-             x < weight_field_stride;
+        for (int x = weight_min_x;
+             x <= weight_max_x;
              x += hash_width) {
 
             const __m256i x_vector =
@@ -444,20 +385,11 @@ void generate_weight_field(
 
 void add_to_spatial_cell(
     RegionLocationsChunk& chunk,
+    int cell_index,
     std::uint8_t x,
     std::uint8_t y,
     std::uint16_t region_index)
 {
-    const int cell_x =
-        x / spatial_cell_side;
-
-    const int cell_y =
-        y / spatial_cell_side;
-
-    const int cell_index =
-        cell_y * spatial_grid_side +
-        cell_x;
-
     std::uint8_t& count =
         chunk.spatial_cell_counts[cell_index];
 
@@ -472,11 +404,6 @@ void add_to_spatial_cell(
         return;
     }
 
-    /*
-     * For now, ignore points beyond the first eight in the
-     * spatial cell. The actual region still exists in the
-     * region vectors.
-     */
     chunk.overflow_cells.push_back(
         static_cast<std::uint8_t>(cell_index));
 
@@ -492,18 +419,56 @@ void find_region_points(
     std::int32_t grid_x,
     std::int32_t grid_y)
 {
-    /*
-     * Rough expected count:
-     * 4096 / 25 ~= 164.
-     */
+
+    int first_cell_x = 0;
+    int last_cell_x = spatial_grid_side - 1;
+
+    int first_cell_y = 0;
+    int last_cell_y = spatial_grid_side - 1;
+
+    if (chunk.received_neighbor_mask & neighbor_left) {
+        first_cell_x = spatial_grid_side - chunk_cell_offset; // 6
+    }
+
+    if (chunk.received_neighbor_mask &
+        neighbor_right) {last_cell_x = chunk_cell_offset - 1; // 3
+    }
+
+    if (chunk.received_neighbor_mask & neighbor_top) {
+        first_cell_y = spatial_grid_side - chunk_cell_offset; // 6
+    }
+
+    if (chunk.received_neighbor_mask & neighbor_bottom) {
+        last_cell_y = chunk_cell_offset - 1; // 3
+    }
+
+    if (first_cell_x > last_cell_x ||
+        first_cell_y > last_cell_y) {
+        return;
+    }
+    
+    const int first_block_x = first_cell_x / cells_per_maxima_block;
+    const int last_block_x = last_cell_x / cells_per_maxima_block;
+
+    const int candidate_min_x = first_cell_x * spatial_cell_side;
+    const int candidate_max_x = (last_cell_x + 1) * spatial_cell_side - 1;
+    const int candidate_min_y = first_cell_y * spatial_cell_side;
+    const int candidate_max_y = (last_cell_y + 1) * spatial_cell_side - 1;
+
+    const int weight_max_y = candidate_max_y + maxima_radius * 2;
+    const int weight_max_x = candidate_max_x + maxima_radius * 2;
+    const int weight_min_y = candidate_min_y;
+    const int weight_min_x = candidate_min_x;
 
     WeightField weight_field;
-
-    generate_weight_field(
-        weight_field,
-        seed,
-        grid_x,
-        grid_y);
+    generate_weight_field(weight_field, 
+        seed, 
+        grid_x, 
+        grid_y, 
+        weight_min_x, 
+        weight_max_x, 
+        weight_min_y, 
+        weight_max_y);
 
     chunk.regions_x.reserve(192);
     chunk.regions_y.reserve(192);
@@ -511,135 +476,218 @@ void find_region_points(
 
     chunk.overflow_cells.reserve(4);
 
-    /*
-     * The 64x64 point area begins two cells into the 68x68
-     * logical weight field.
-     *
-     * Because 64 is divisible by 16, every candidate is handled
-     * by AVX2 with no scalar or overlapping tail.
-     */
-    for (int y = 0;
-         y < region_points_side;
-         ++y) {
 
-        const int field_y =
-            y + maxima_radius;
+    const __m256i all_lanes =
+        _mm256_set1_epi16(
+            static_cast<short>(-1));
 
-        for (int x = 0;
-             x < region_points_side;
-             x += maxima_width) {
+    const __m256i first_cell_lanes =
+        _mm256_setr_epi64x(
+            -1, -1,
+             0,  0);
 
-            const int field_x =
-                x + maxima_radius;
+    const __m256i second_cell_lanes =
+        _mm256_setr_epi64x(
+             0,  0,
+            -1, -1);
 
-            const std::uint16_t* center_pointer =
-                weight_field.data() +
-                static_cast<std::size_t>(field_y) *
-                    weight_field_stride +
-                field_x;
+    for (int cell_y = first_cell_y; cell_y <= last_cell_y; ++cell_y) {
 
-            const __m256i center =
-                _mm256_loadu_si256(
-                    reinterpret_cast<const __m256i*>(
-                        center_pointer));
+        const int y_begin = cell_y * spatial_cell_side;
+        const int y_end = y_begin + spatial_cell_side;
 
-            __m256i mask =
-                _mm256_set1_epi16(
-                    static_cast<short>(-1));
+        for (int block_x = first_block_x; block_x <= last_block_x; ++block_x) {
+            /*
+             * Each 16-wide maxima block covers exactly
+             * two neighboring 8-wide spatial cells.
+             */
+            const int first_cell_x = block_x * cells_per_maxima_block;
+            const int second_cell_x = first_cell_x + 1;
+            const int first_cell_index = cell_y * spatial_grid_side + first_cell_x;
+            const int second_cell_index = first_cell_index + 1;
 
-            for (int dy = -maxima_radius;
-                 dy <= maxima_radius;
-                 ++dy) {
+            const bool first_cell_ready =
+                chunk.cell_generation_state[
+                    cell_y][first_cell_x] != 0;
 
-                for (int dx = -maxima_radius;
-                     dx <= maxima_radius;
-                     ++dx) {
+            const bool second_cell_ready =
+                chunk.cell_generation_state[
+                    cell_y][second_cell_x] != 0;
 
-                    if (dx == 0 && dy == 0) {
-                        continue;
-                    }
+            /*
+             * Both cells already contain their complete
+             * region-point data.
+             */
+            if (first_cell_ready &&
+                second_cell_ready) {
 
-                    const std::uint16_t* neighbor_pointer =
-                        weight_field.data() +
-                        static_cast<std::size_t>(
-                            field_y + dy) *
-                            weight_field_stride +
-                        field_x + dx;
-
-                    const __m256i neighbor =
-                        _mm256_loadu_si256(
-                            reinterpret_cast<
-                                const __m256i*>(
-                                neighbor_pointer));
-
-                    mask = _mm256_and_si256(
-                        mask,
-                        greater_u16(
-                            center,
-                            neighbor));
-
-                    if (_mm256_testz_si256(
-                            mask,
-                            mask)) {
-                        break;
-                    }
-                }
-
-                if (_mm256_testz_si256(
-                        mask,
-                        mask)) {
-                    break;
-                }
-            }
-
-            const std::uint32_t bits =
-                static_cast<std::uint32_t>(
-                    _mm256_movemask_epi8(mask));
-
-            if (bits == 0) {
                 continue;
             }
 
             /*
-             * Extract the sparse maxima from the SIMD result.
-             * This bookkeeping is intentionally scalar.
+             * Only lanes belonging to cells that still need
+             * generation participate in the maxima test.
              */
-            for (int lane = 0;
-                 lane < maxima_width;
-                 ++lane) {
+            __m256i active_lanes;
 
-                const std::uint32_t lane_mask =
-                    0x3u << (lane * 2);
+            int lane_begin;
+            int lane_end;
 
-                if ((bits & lane_mask) != lane_mask) {
+            if (first_cell_ready) {
+                active_lanes = second_cell_lanes;
+                lane_begin = spatial_cell_side;
+                lane_end = maxima_width;
+            }
+            else if (second_cell_ready) {
+                active_lanes = first_cell_lanes;
+                lane_begin = 0;
+                lane_end = spatial_cell_side;
+            }
+            else {
+                active_lanes = all_lanes;
+                lane_begin = 0;
+                lane_end = maxima_width;
+            }
+
+            const int x = block_x * maxima_width;
+            const int field_x = x + maxima_radius;
+
+            /*
+             * Process the eight rows belonging to this
+             * pair of spatial cells.
+             */
+            for (int y = y_begin; y < y_end; ++y) {
+
+                const int field_y = y + maxima_radius;
+
+                const std::uint16_t* center_pointer =
+                    weight_field.data() +
+                    static_cast<std::size_t>(field_y) *
+                        weight_field_stride +
+                    field_x;
+
+                const __m256i center =
+                    _mm256_loadu_si256(
+                        reinterpret_cast<const __m256i*>(
+                            center_pointer));
+
+                /*
+                 * Ready cells start with zero lanes, so they
+                 * take no further part in the maxima test.
+                 */
+                __m256i mask = active_lanes;
+
+
+                for (int dy = -maxima_radius; dy <= maxima_radius; ++dy) {
+                    for (int dx = -maxima_radius; dx <= maxima_radius; ++dx) {
+
+                        if (dx == 0 && dy == 0) {
+                            continue;
+                        }
+
+                        const std::uint16_t* neighbor_pointer =
+                            weight_field.data() +
+                            static_cast<std::size_t>(
+                                field_y + dy) *
+                                weight_field_stride +
+                            field_x + dx;
+
+                        const __m256i neighbor =
+                            _mm256_loadu_si256(
+                                reinterpret_cast<
+                                    const __m256i*>(
+                                        neighbor_pointer));
+
+                        mask =
+                            _mm256_and_si256(
+                                mask,
+                                greater_u16(
+                                    center,
+                                    neighbor));
+
+                        if (_mm256_testz_si256(mask, mask)) {
+                            break;
+                        }
+                    }
+
+                    if (_mm256_testz_si256(mask, mask)) {
+                        break;
+                    }
+                }
+
+                const std::uint32_t bits =
+                    static_cast<std::uint32_t>(
+                        _mm256_movemask_epi8(
+                            mask));
+
+                if (bits == 0) {
                     continue;
                 }
 
-                const std::uint8_t point_x =
-                    static_cast<std::uint8_t>(
-                        x + lane);
-
-                const std::uint8_t point_y =
-                    static_cast<std::uint8_t>(y);
-
                 /*
-                * The new point will get this index in all parallel
-                * region vectors.
-                */
-                const std::uint16_t region_index =
-                    static_cast<std::uint16_t>(
-                        chunk.regions_x.size());
+                 * Extract only lanes belonging to cells that
+                 * were not already available.
+                 */
+                for (int lane = lane_begin; lane < lane_end; ++lane) {
 
-                chunk.regions_x.push_back(point_x);
-                chunk.regions_y.push_back(point_y);
-                chunk.region_weights.push_back(
-                    center_pointer[lane]);
+                    const std::uint32_t lane_mask = 0x3u << (lane * 2);
 
-                add_to_spatial_cell(
-                    chunk,
-                    point_x,
-                    point_y,
-                    region_index);
+                    if ((bits & lane_mask) != lane_mask) {
+                        continue;
+                    }
+
+                    const std::uint8_t point_x =
+                        static_cast<std::uint8_t>(
+                            x + lane);
+
+                    const std::uint8_t point_y =
+                        static_cast<std::uint8_t>(
+                            y);
+
+                    const std::uint16_t region_index =
+                        static_cast<std::uint16_t>(
+                            chunk.regions_x.size());
+
+                    chunk.regions_x.push_back(point_x);
+                    chunk.regions_y.push_back(point_y);
+                    chunk.region_weights.push_back(center_pointer[lane]);
+                    chunk.region_directions.push_back(0.0f);
+                    chunk.region_curve_indices.push_back(UINT16_MAX);
+
+                    /*
+                     * Lanes 0..7 belong to the first cell.
+                     * Lanes 8..15 belong to the second.
+                     */
+                    const int cell_index =
+                        lane < spatial_cell_side
+                            ? first_cell_index
+                            : second_cell_index;
+
+
+                    add_to_spatial_cell(
+                        chunk,
+                        cell_index,
+                        point_x,
+                        point_y,
+                        region_index);
+                }
+            }
+
+            /*
+             * Both cells are now complete.
+             *
+             * A previously ready cell remains ready, while
+             * a generated cell becomes ready here.
+             */
+
+            if (!first_cell_ready) {
+                chunk.cell_generation_state[
+                    cell_y][first_cell_x] = 1;
+            }
+            
+            if (!second_cell_ready) {
+                chunk.cell_generation_state[
+                    cell_y][second_cell_x] = 1;
             }
         }
     }
@@ -690,10 +738,13 @@ void calculate_region_directions(
 
             const int cell_index =
                 cell_y * spatial_grid_side + cell_x;
+            
+            if (chunk.cell_generation_state[cell_y][cell_x] >= 2) {
+                continue;
+            }
 
             const int cell_count =
                 chunk.spatial_cell_counts[cell_index];
-
 
             for (int slot = 0; slot < cell_count; ++slot) {
 
@@ -896,6 +947,10 @@ void calculate_region_directions(
                 chunk.region_directions[point_index] =
                     direction;
             }
+        
+        if (chunk.cell_generation_state[cell_y][cell_x] < 2) {
+            chunk.cell_generation_state[cell_y][cell_x] = 2;
+        }
         }
     }
 }
@@ -1022,28 +1077,24 @@ void create_region_curves(
     RegionLocationsChunk& chunk,
     std::uint32_t seed,
     std::int32_t grid_x,
-    std::int32_t grid_y,
-
-    std::vector<uint8_t>& curve_min_x,
-    std::vector<uint8_t>& curve_max_x,
-    std::vector<uint8_t>& curve_min_y,
-    std::vector<uint8_t>& curve_max_y,
-    std::vector<std::array<std::uint16_t, 16>>& temporary_curves,
-    std::vector<std::uint16_t>& curve_region_indices,
-    std::vector<std::uint16_t>& region_curve_indices)
+    std::int32_t grid_y)
 {
     const std::size_t point_count =
         chunk.regions_x.size();
 
+    /*
+     * Existing curves may have been received from neighboring chunks.
+     * This list contains only regions whose curves must be generated now.
+     */
+    std::vector<std::uint16_t> curve_region_indices;
+    curve_region_indices.reserve(point_count);
 
     /*
-     * First collect all regions that actually produce support curves.
-     *
-     * This gives the SIMD generator one compact list instead of
-     * mixing cell traversal with curve generation.
+     * New curves are appended after curves already stored in the chunk.
      */
-    curve_region_indices.clear();
-    curve_region_indices.reserve(point_count);
+    const std::size_t first_new_curve_index =
+        chunk.temporary_curves.size();
+
 
     for (int cell_y = curve_support_min_cell;
          cell_y <= curve_support_max_cell;
@@ -1053,12 +1104,17 @@ void create_region_curves(
              cell_x <= curve_support_max_cell;
              ++cell_x) {
 
+            if (chunk.cell_generation_state[cell_y][cell_x] >= 3) {
+                continue;
+            }
+
             const int cell_index =
                 cell_y * spatial_grid_side +
                 cell_x;
 
             const int count =
                 chunk.spatial_cell_counts[cell_index];
+
 
             for (int slot = 0;
                  slot < count;
@@ -1068,12 +1124,24 @@ void create_region_curves(
                     chunk.spatial_cells_indices[
                         cell_index][slot];
 
-                const std::uint16_t curve_index =
-                    static_cast<std::uint16_t>(
-                        curve_region_indices.size());
+                /*
+                 * Normally every region in an unfinished curve cell
+                 * has UINT16_MAX here. This also makes the function
+                 * safe if a region was already supplied externally.
+                 */
+                if (chunk.region_curve_indices[point_index] !=
+                    UINT16_MAX) {
 
-                region_curve_indices[point_index] =
-                    curve_index;
+                    continue;
+                }
+
+                const std::size_t curve_index =
+                    first_new_curve_index +
+                    curve_region_indices.size();
+
+                chunk.region_curve_indices[point_index] =
+                    static_cast<std::uint16_t>(
+                        curve_index);
 
                 curve_region_indices.push_back(
                     point_index);
@@ -1082,17 +1150,37 @@ void create_region_curves(
     }
 
 
-    const std::size_t curve_count =
+    const std::size_t new_curve_count =
         curve_region_indices.size();
 
-    curve_min_x.resize(curve_count);
-    curve_max_x.resize(curve_count);
-    curve_min_y.resize(curve_count);
-    curve_max_y.resize(curve_count);
+    const std::size_t total_curve_count =
+        first_new_curve_index +
+        new_curve_count;
 
-    temporary_curves.resize(curve_count);
 
-    if (curve_count == 0) {
+    chunk.curve_min_x.resize(total_curve_count);
+    chunk.curve_max_x.resize(total_curve_count);
+    chunk.curve_min_y.resize(total_curve_count);
+    chunk.curve_max_y.resize(total_curve_count);
+
+    chunk.temporary_curves.resize(
+        total_curve_count);
+
+    if (new_curve_count == 0) {
+
+        for (int cell_y = curve_support_min_cell;
+            cell_y <= curve_support_max_cell;
+            ++cell_y) {
+
+            for (int cell_x = curve_support_min_cell;
+                cell_x <= curve_support_max_cell;
+                ++cell_x) {
+
+                chunk.cell_generation_state[
+                    cell_y][cell_x] = 3;
+            }
+        }
+
         return;
     }
 
@@ -1184,7 +1272,7 @@ void create_region_curves(
      * Each column is one SIMD lane / curve.
      *
      * After generation it is transposed into the existing AoS
-     * temporary_curves layout used by collision detection.
+     * chunk.temporary_curves layout used by collision detection.
      */
     alignas(32) std::uint32_t
         generated_points[region_length][8];
@@ -1199,15 +1287,13 @@ void create_region_curves(
     alignas(32) int max_y_values[8];
 
 
-    for (std::size_t batch_start = 0;
-         batch_start < curve_count;
-         batch_start += 8) {
-
+    for (std::size_t batch_start = 0; batch_start < new_curve_count; batch_start += 8) 
+    {
         const int valid_count =
             static_cast<int>(
                 std::min<std::size_t>(
                     8,
-                    curve_count - batch_start));
+                    new_curve_count - batch_start));
 
         /*
          * AVX2 has no need for a separate scalar tail here.
@@ -1529,11 +1615,12 @@ void create_region_curves(
              ++lane) {
 
             const std::size_t curve_index =
+                first_new_curve_index +
                 batch_start +
                 static_cast<std::size_t>(lane);
 
             auto& temporary_curve =
-                temporary_curves[curve_index];
+                chunk.temporary_curves[curve_index];
 
             temporary_curve.fill(0xFFFFu);
 
@@ -1547,24 +1634,36 @@ void create_region_curves(
             }
 
 
-            curve_min_x[curve_index] =
+            chunk.curve_min_x[curve_index] =
                 static_cast<std::uint8_t>(
                     min_x_values[lane]);
 
-            curve_max_x[curve_index] =
+            chunk.curve_max_x[curve_index] =
                 static_cast<std::uint8_t>(
                     max_x_values[lane]);
 
-            curve_min_y[curve_index] =
+            chunk.curve_min_y[curve_index] =
                 static_cast<std::uint8_t>(
                     min_y_values[lane]);
 
-            curve_max_y[curve_index] =
+            chunk.curve_max_y[curve_index] =
                 static_cast<std::uint8_t>(
                     max_y_values[lane]);
         }
     }
 
+    for (int cell_y = curve_support_min_cell;
+        cell_y <= curve_support_max_cell;
+        ++cell_y) {
+
+        for (int cell_x = curve_support_min_cell;
+            cell_x <= curve_support_max_cell;
+            ++cell_x) {
+
+            chunk.cell_generation_state[
+                cell_y][cell_x] = 3;
+        }
+    }
 
     if (!chunk.overflow_cells.empty()) {
         /*
@@ -1736,19 +1835,9 @@ CurveSegment find_longest_clear_segment(
 
 void find_collision_candidates(
     const RegionLocationsChunk& chunk,
-    const std::vector<std::uint8_t>& curve_min_x,
-    const std::vector<std::uint8_t>& curve_max_x,
-    const std::vector<std::uint8_t>& curve_min_y,
-    const std::vector<std::uint8_t>& curve_max_y,
-    const std::vector<std::array<std::uint16_t, 16>>& temporary_curves,
-    const std::vector<std::uint16_t>& curve_region_indices,
-    const std::vector<std::uint16_t>& region_curve_indices,
     std::vector<std::uint8_t>& curve_start_positions,
     std::vector<std::uint8_t>& curve_point_counts)
 {
-    // curve_region_indices is currently not needed here because
-    // iteration starts from spatial cells -> region index.
-    (void)curve_region_indices;
 
     for (int current_cell_y = chunk_curve_min_cell; current_cell_y <= chunk_curve_max_cell; ++current_cell_y) {
         for (int current_cell_x = chunk_curve_min_cell; current_cell_x <= chunk_curve_max_cell; ++current_cell_x) {
@@ -1759,7 +1848,7 @@ void find_collision_candidates(
             for (int current_slot = 0; current_slot < current_cell_count; ++current_slot) {
 
                 const std::uint16_t current_region_index = chunk.spatial_cells_indices[current_cell_index][current_slot];
-                const std::uint16_t current_curve_index = region_curve_indices[current_region_index];
+                const std::uint16_t current_curve_index = chunk.region_curve_indices[current_region_index];
 
                 if (current_curve_index == UINT16_MAX) {
                     continue;
@@ -1767,10 +1856,10 @@ void find_collision_candidates(
 
                 const std::uint16_t current_weight = chunk.region_weights[current_region_index];
                 const CurveBounds current_bounds{
-                    curve_min_x[current_curve_index],
-                    curve_max_x[current_curve_index],
-                    curve_min_y[current_curve_index],
-                    curve_max_y[current_curve_index]
+                    chunk.curve_min_x[current_curve_index],
+                    chunk.curve_max_x[current_curve_index],
+                    chunk.curve_min_y[current_curve_index],
+                    chunk.curve_max_y[current_curve_index]
                 };
 
                 const int candidate_min_x = static_cast<int>(current_bounds.min_x) - curve_reach - curve_collision_radius;
@@ -1827,17 +1916,17 @@ void find_collision_candidates(
                                 
 
 
-                            const std::uint16_t other_curve_index = region_curve_indices[other_region_index];
+                            const std::uint16_t other_curve_index = chunk.region_curve_indices[other_region_index];
 
                             if (other_curve_index == UINT16_MAX) {
                                 continue;
                             }
 
                             const CurveBounds other_bounds{
-                                curve_min_x[other_curve_index],
-                                curve_max_x[other_curve_index],
-                                curve_min_y[other_curve_index],
-                                curve_max_y[other_curve_index]
+                                chunk.curve_min_x[other_curve_index],
+                                chunk.curve_max_x[other_curve_index],
+                                chunk.curve_min_y[other_curve_index],
+                                chunk.curve_max_y[other_curve_index]
                             };
 
                             if (!bounds_overlap_with_margin(
@@ -1849,8 +1938,8 @@ void find_collision_candidates(
                             }
 
                             collision_mask |= get_collision_mask(
-                                    temporary_curves[current_curve_index],
-                                    temporary_curves[other_curve_index]);
+                                    chunk.temporary_curves[current_curve_index],
+                                    chunk.temporary_curves[other_curve_index]);
 
                             if ((collision_mask & 0x01FFu) == 0x01FFu) {
                                 break;
@@ -1887,18 +1976,12 @@ void find_collision_candidates(
 
 void pack_region_curves(
     RegionLocationsChunk& chunk,
-    const std::vector<std::array<std::uint16_t, 16>>& temporary_curves,
-    const std::vector<std::uint16_t>& curve_region_indices,
-    const std::vector<std::uint16_t>& region_curve_indices,
     const std::vector<std::uint8_t>& curve_start_positions,
     const std::vector<std::uint8_t>& curve_point_counts)
 {
     // Keep region_curves parallel with the region arrays.
     // Regions outside the actual 32x32 chunk remain zero.
     chunk.region_curves.assign(chunk.regions_x.size(), 0u);
-
-    // Not needed when iteration begins from spatial cells.
-    (void)curve_region_indices;
 
 
     for (int cell_y = chunk_curve_min_cell; cell_y <= chunk_curve_max_cell; ++cell_y) {
@@ -1911,13 +1994,13 @@ void pack_region_curves(
             for (int slot = 0; slot < count; ++slot) {
 
                 const std::uint16_t region_index = chunk.spatial_cells_indices[cell_index][slot];
-                const std::uint16_t curve_index = region_curve_indices[region_index];
+                const std::uint16_t curve_index = chunk.region_curve_indices[region_index];
 
                 if (curve_index == UINT16_MAX) {
                     continue;
                 }
 
-                const auto& curve = temporary_curves[curve_index];
+                const auto& curve = chunk.temporary_curves[curve_index];
 
                 std::uint32_t packed_curve = 0u;
 
@@ -1946,6 +2029,390 @@ void pack_region_curves(
     }
 }
 
+std::uint16_t find_region_in_cell(
+    const RegionLocationsChunk& chunk,
+    int cell_index,
+    std::uint8_t x,
+    std::uint8_t y)
+{
+    const int count =
+        chunk.spatial_cell_counts[cell_index];
+
+    for (int slot = 0; slot < count; ++slot) {
+
+        const std::uint16_t region_index =
+            chunk.spatial_cells_indices[
+                cell_index][slot];
+
+        if (chunk.regions_x[region_index] == x &&
+            chunk.regions_y[region_index] == y) {
+
+            return region_index;
+        }
+    }
+
+    return UINT16_MAX;
+}
+
+void copy_cells_to_neighbor(
+    const RegionLocationsChunk& source,
+    RegionLocationsChunk& target,
+    int dx,
+    int dy)
+{
+    bool point_overlap_complete = true;
+
+    const int source_max_y = std::min(spatial_grid_side - 1, spatial_grid_side - 1 + dy * chunk_cell_offset);
+    const int source_max_x = std::min(spatial_grid_side - 1, spatial_grid_side - 1 + dx * chunk_cell_offset);    
+    const int source_min_x = std::max(0, dx * chunk_cell_offset);
+    const int source_min_y = std::max(0, dy * chunk_cell_offset);    
+
+    const int coordinate_offset_x = -dx * chunk_side;
+    const int coordinate_offset_y = -dy * chunk_side;
+
+    const std::size_t expected_regions =
+        target.regions_x.size() +
+        source.regions_x.size();
+
+    target.regions_x.reserve(expected_regions);
+    target.regions_y.reserve(expected_regions);
+    target.region_weights.reserve(expected_regions);
+    target.region_directions.reserve(expected_regions);
+    target.region_curve_indices.reserve(expected_regions);
+
+    const std::size_t expected_curves =
+        target.temporary_curves.size() +
+        source.temporary_curves.size();
+
+    target.temporary_curves.reserve(expected_curves);
+
+    target.curve_min_x.reserve(expected_curves);
+    target.curve_max_x.reserve(expected_curves);
+    target.curve_min_y.reserve(expected_curves);
+    target.curve_max_y.reserve(expected_curves);
+
+    const __m256i curve_x_offset =_mm256_set1_epi16(static_cast<short>(coordinate_offset_x * 256));
+    const __m256i curve_y_offset = _mm256_set1_epi16(static_cast<short>(coordinate_offset_y));
+    const __m256i curve_x_mask = _mm256_set1_epi16(static_cast<short>(0xFF00));
+    const __m256i curve_y_mask = _mm256_set1_epi16(static_cast<short>(0x00FF));
+    const __m256i valid_curve_positions =
+        _mm256_setr_epi16(
+            -1, -1, -1, -1,
+            -1, -1, -1, -1,
+            -1,
+            0,  0,  0,
+            0,  0,  0,  0);
+
+    /*
+     * Cell generation state:
+     *
+     * 0 = nothing
+     * 1 = points
+     * 2 = points + directions
+     * 3 = points + directions + curves
+     */
+    for (int source_y = source_min_y; source_y <= source_max_y; ++source_y) {
+
+        const int target_y = source_y - dy * chunk_cell_offset;
+
+        for (int source_x = source_min_x; source_x <= source_max_x; ++source_x) {
+
+            const int target_x = source_x - dx * chunk_cell_offset;
+            const int source_cell_index = source_y * spatial_grid_side + source_x;
+            const int target_cell_index = target_y * spatial_grid_side + target_x;
+            const std::uint8_t source_state = source.cell_generation_state[source_y][source_x];
+            std::uint8_t& target_state = target.cell_generation_state[target_y][target_x];
+            /*
+             * Directions and curves are only useful in support cells
+             * 1..8. Cells on the outer edge only need points.
+             */
+            const bool target_support_cell =
+                target_x >= curve_support_min_cell &&
+                target_x <= curve_support_max_cell &&
+                target_y >= curve_support_min_cell &&
+                target_y <= curve_support_max_cell;
+
+            const std::uint8_t available_state =
+                target_support_cell
+                    ? source_state
+                    : std::min<std::uint8_t>(source_state, 1);
+
+            /*
+            * This neighbor overlap is only complete if the source
+            * has complete point data for every overlapping cell.
+            */
+            if (source_state < 1) {
+                point_overlap_complete = false;
+            }
+
+            if (target_state >= available_state) {
+                continue;
+            }
+ 
+            const std::uint8_t old_target_state =
+                target_state;
+
+            const int count =
+                source.spatial_cell_counts[source_cell_index];
+
+            for (int slot = 0; slot < count; ++slot) {
+
+                const std::uint16_t source_region_index =
+                    source.spatial_cells_indices[
+                        source_cell_index][slot];
+
+                const std::uint8_t transformed_x =
+                    static_cast<std::uint8_t>(
+                        static_cast<int>(
+                            source.regions_x[source_region_index]) +
+                        coordinate_offset_x);
+
+                const std::uint8_t transformed_y =
+                    static_cast<std::uint8_t>(
+                        static_cast<int>(
+                            source.regions_y[source_region_index]) +
+                        coordinate_offset_y);
+
+
+                std::uint16_t target_region_index;
+
+
+                /*
+                * If the target cell had no points, append them directly.
+                * Otherwise the same world-space region already exists and
+                * only needs to be upgraded.
+                */
+                if (old_target_state == 0) {
+
+                    target_region_index =
+                        static_cast<std::uint16_t>(
+                            target.regions_x.size());
+
+                    target.regions_x.push_back(
+                        transformed_x);
+
+                    target.regions_y.push_back(
+                        transformed_y);
+
+                    target.region_weights.push_back(
+                        source.region_weights[
+                            source_region_index]);
+
+                    target.region_directions.push_back(
+                        available_state >= 2
+                            ? source.region_directions[
+                                source_region_index]
+                            : 0.0f);
+
+                    target.region_curve_indices.push_back(
+                        UINT16_MAX);
+
+
+                    add_to_spatial_cell(
+                        target,
+                        target_cell_index,
+                        transformed_x,
+                        transformed_y,
+                        target_region_index);
+                }
+                else {
+
+                    target_region_index =
+                        find_region_in_cell(
+                            target,
+                            target_cell_index,
+                            transformed_x,
+                            transformed_y);
+
+                    if (target_region_index == UINT16_MAX) {
+                        continue;
+                    }
+
+
+                    if (available_state >= 2 &&
+                        old_target_state < 2) {
+
+                        target.region_directions[
+                            target_region_index] =
+                            source.region_directions[
+                                source_region_index];
+                    }
+                }
+
+
+                if (available_state < 3 ||
+                    old_target_state >= 3) {
+
+                    continue;
+                }
+
+
+                const std::uint16_t source_curve_index =
+                    source.region_curve_indices[
+                        source_region_index];
+
+                if (source_curve_index == UINT16_MAX) {
+                    continue;
+                }
+
+
+                const std::uint16_t target_curve_index =
+                    static_cast<std::uint16_t>(
+                        target.temporary_curves.size());
+
+
+                std::array<std::uint16_t, 16>
+                    transformed_curve;
+
+
+                const auto& source_curve =
+                    source.temporary_curves[
+                        source_curve_index];
+
+            const __m256i source_tiles =
+                _mm256_loadu_si256(
+                    reinterpret_cast<const __m256i*>(
+                        source_curve.data()));
+
+            const __m256i transformed_curve_x =
+                _mm256_add_epi16(
+                    _mm256_and_si256(
+                        source_tiles,
+                        curve_x_mask),
+                    curve_x_offset);
+
+            const __m256i transformed_curve_y =
+                _mm256_add_epi16(
+                    _mm256_and_si256(
+                        source_tiles,
+                        curve_y_mask),
+                    curve_y_offset);
+
+            const __m256i transformed_tiles =
+                _mm256_or_si256(
+                    transformed_curve_x,
+                    transformed_curve_y);
+
+            /*
+            * Preserve the unused 0xFFFF tail.
+            */
+            const __m256i final_tiles =
+                _mm256_blendv_epi8(
+                    source_tiles,
+                    transformed_tiles,
+                    valid_curve_positions);
+
+            _mm256_storeu_si256(
+                reinterpret_cast<__m256i*>(
+                    transformed_curve.data()),
+                final_tiles);
+
+
+                target.temporary_curves.push_back(
+                    transformed_curve);
+
+                target.curve_min_x.push_back(
+                    static_cast<std::uint8_t>(
+                        static_cast<int>(
+                            source.curve_min_x[
+                                source_curve_index]) +
+                        coordinate_offset_x));
+
+                target.curve_max_x.push_back(
+                    static_cast<std::uint8_t>(
+                        static_cast<int>(
+                            source.curve_max_x[
+                                source_curve_index]) +
+                        coordinate_offset_x));
+
+                target.curve_min_y.push_back(
+                    static_cast<std::uint8_t>(
+                        static_cast<int>(
+                            source.curve_min_y[
+                                source_curve_index]) +
+                        coordinate_offset_y));
+
+                target.curve_max_y.push_back(
+                    static_cast<std::uint8_t>(
+                        static_cast<int>(
+                            source.curve_max_y[
+                                source_curve_index]) +
+                        coordinate_offset_y));
+
+                target.region_curve_indices[
+                    target_region_index] =
+                    target_curve_index;
+            }
+
+
+            target_state =
+                available_state;
+        }
+    }
+    if (point_overlap_complete) {
+        target.received_neighbor_mask |=
+            neighbor_bit(
+                -dx,
+                -dy);
+    }
+}
+
+void adjacent_chunks(
+    std::int32_t grid_x,
+    std::int32_t grid_y,
+    std::unordered_map<
+        std::pair<int, int>,
+        RegionLocationsChunk,
+        PairHash>& grid)
+{
+    const std::pair<int, int> source_position{
+        grid_x,
+        grid_y
+    };
+
+    const RegionLocationsChunk& source =
+        grid.at(source_position);
+
+
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+
+            if (dx == 0 && dy == 0) {
+                continue;
+            }
+
+
+            const std::pair<int, int> target_position{
+                grid_x + dx,
+                grid_y + dy
+            };
+
+
+            auto target_it =
+                grid.try_emplace(
+                    target_position,
+                    RegionLocationsChunk{}).first;
+
+            RegionLocationsChunk& target =
+                target_it->second;
+
+
+            if (target.generation_state ==
+                RegionLocationsChunk::
+                    ChunkGenerationState::Finished) {
+
+                continue;
+            }
+
+
+            copy_cells_to_neighbor(
+                source,
+                target,
+                dx,
+                dy);
+        }
+    }
+}
 
 void region_distribution(
     std::uint32_t seed,
@@ -1956,16 +2423,20 @@ void region_distribution(
         RegionLocationsChunk,
         PairHash>& grid)
 {
+
     const std::pair<int, int> position{
         grid_x,
         grid_y
     };
 
-    if (grid.find(position) != grid.end()) {
+    auto it = grid.try_emplace(position, RegionLocationsChunk{}).first;
+    RegionLocationsChunk& chunk = it->second;
+
+    if (chunk.generation_state ==
+        RegionLocationsChunk::ChunkGenerationState::Finished) {
+
         return;
     }
-
-    RegionLocationsChunk chunk;
 
     find_region_points(
         chunk,
@@ -1979,51 +2450,31 @@ void region_distribution(
         grid_x,
         grid_y);
 
-    std::vector<std::uint8_t> curve_min_x;
-    std::vector<std::uint8_t> curve_max_x;
-    std::vector<std::uint8_t> curve_min_y;
-    std::vector<std::uint8_t> curve_max_y;
-    std::vector<std::array<std::uint16_t, 16>> temporary_curves;
-    std::vector<std::uint16_t> curve_region_indices;
-    std::vector<std::uint16_t> region_curve_indices(chunk.regions_x.size(), UINT16_MAX);
-
     create_region_curves(
         chunk,
         seed,
         grid_x,
-        grid_y,
-        curve_min_x,
-        curve_max_x,
-        curve_min_y,
-        curve_max_y,
-        temporary_curves,
-        curve_region_indices,
-        region_curve_indices);
+        grid_y);
 
-    std::vector<std::uint8_t> curve_start_positions(temporary_curves.size(), 0);
-    std::vector<std::uint8_t> curve_point_counts(temporary_curves.size(), static_cast<std::uint8_t>(region_length));
+    std::vector<std::uint8_t> curve_start_positions(chunk.temporary_curves.size(), 0);
+    std::vector<std::uint8_t> curve_point_counts(chunk.temporary_curves.size(), static_cast<std::uint8_t>(region_length));
+
+    adjacent_chunks (
+        grid_x,
+        grid_y,
+        grid
+    );
 
     find_collision_candidates(
         chunk,
-        curve_min_x,
-        curve_max_x,
-        curve_min_y,
-        curve_max_y,
-        temporary_curves,
-        curve_region_indices,
-        region_curve_indices,
         curve_start_positions,
         curve_point_counts);
 
     pack_region_curves(
         chunk,
-        temporary_curves,
-        curve_region_indices,
-        region_curve_indices,
         curve_start_positions,
         curve_point_counts);
 
-    grid.emplace(
-        position,
-        std::move(chunk));
+    chunk.generation_state =
+    RegionLocationsChunk::ChunkGenerationState::Finished;
 }
